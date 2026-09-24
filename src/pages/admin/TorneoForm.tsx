@@ -42,7 +42,7 @@ export default function TorneoForm() {
         })
       }
       ;((tc.data as TorneoCategoriaVista[]) ?? []).forEach((c) => {
-        base[c.categoria_id] = { activa: true, cupo_max: c.cupo_max, cupo_min: c.cupo_min, tcId: c.id, inscriptas: c.inscriptas }
+        base[c.categoria_id] = { activa: true, cupo_max: c.cupo_max, cupo_min: c.cupo_min, tcId: c.id, inscriptas: c.inscriptas ?? 0 }
       })
       setCats({ ...base })
       setCargando(false)

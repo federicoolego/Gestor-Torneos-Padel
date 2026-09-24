@@ -133,10 +133,16 @@ export default function TorneoDetalle() {
           {tc && (
             <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-noche/70">
               <Badge tono={tc.estado === 'suspendida' ? 'rojo' : 'azul'}>{ESTADO_CATEGORIA_LABEL[tc.estado]}</Badge>
-              <span className="num">{tc.inscriptas} de {tc.cupo_max} parejas</span>
-              {tc.estado === 'inscripcion' && tc.inscriptas < tc.cupo_min && (
-                <span>· se arma con {tc.cupo_min} como mínimo</span>
-              )}
+              {tc.inscriptas !== null ? (
+                <>
+                  <span className="num">{tc.inscriptas} de {tc.cupo_max} parejas</span>
+                  {tc.estado === 'inscripcion' && tc.inscriptas < tc.cupo_min && (
+                    <span>· se arma con {tc.cupo_min} como mínimo</span>
+                  )}
+                </>
+              ) : tc.cupo_completo && tc.estado === 'inscripcion' ? (
+                <span>Cupo completo</span>
+              ) : null}
             </p>
           )}
 
@@ -154,8 +160,14 @@ export default function TorneoDetalle() {
             {cargando ? <Spinner /> : tab === 'zonas' ? (
               zonas.length === 0 ? (
                 <div className="space-y-4">
-                  <Alerta>Las zonas se arman al cerrar la inscripción. Mientras tanto, estas son las parejas anotadas.</Alerta>
-                  {inscriptas.length === 0 ? <Vacio titulo="Todavía no hay parejas inscriptas" /> : (
+                  <Alerta>
+                    {esEditor
+                      ? 'Las zonas se arman al cerrar la inscripción. Mientras tanto, estas son las parejas anotadas.'
+                      : misIds.length > 0
+                        ? 'Tu pareja está inscripta. Las zonas se publican al cerrar la inscripción.'
+                        : 'Las zonas se publican al cerrar la inscripción.'}
+                  </Alerta>
+                  {!esEditor ? null : inscriptas.length === 0 ? <Vacio titulo="Todavía no hay parejas inscriptas" /> : (
                     <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       {inscriptas.map((i, n) => (
                         <li key={i.id} className={`flex items-center gap-3 rounded-lg bg-white px-3 py-2 ring-1 ring-noche/10 ${misIds.includes(i.id) ? 'ring-2 ring-cancha' : ''}`}>
@@ -282,8 +294,8 @@ function InscribirModal({
               <Select value={tcId} onChange={(e) => setTcId(e.target.value)} disabled={habilitadas.length === 0}>
                 <option value="" disabled>{habilitadas.length ? 'Elegí la categoría' : 'Ninguna categoría disponible para esta pareja'}</option>
                 {habilitadas.map((c) => (
-                  <option key={c.id} value={c.id} disabled={c.inscriptas >= c.cupo_max}>
-                    {c.categoria} — {c.inscriptas >= c.cupo_max ? 'cupo completo' : `${c.cupo_max - c.inscriptas} lugares`}
+                  <option key={c.id} value={c.id} disabled={c.cupo_completo}>
+                    {c.categoria}{c.cupo_completo ? ' — cupo completo' : ''}
                   </option>
                 ))}
               </Select>

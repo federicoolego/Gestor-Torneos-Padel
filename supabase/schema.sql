@@ -103,7 +103,10 @@ create table public.sedes (
   activa     boolean not null default true,
   created_at timestamptz not null default now()
 );
-insert into public.sedes (nombre) values ('El Clásico'), ('El Clásico 2');
+insert into public.sedes (nombre, direccion) values
+  ('El Clásico',   'Malaspina, Villa Ramallo'),
+  ('El Clásico 2', null),
+  ('Complejo PM',  'Av. Savio 450, Ramallo');
 
 create table public.parejas (
   id           uuid primary key default gen_random_uuid(),
@@ -1045,12 +1048,18 @@ join public.jugadores j1 on j1.id = p.jugador1_id join public.categorias c1 on c
 join public.jugadores j2 on j2.id = p.jugador2_id join public.categorias c2 on c2.id = j2.categoria_id;
 
 create view public.v_torneo_categorias as
+-- inscriptas: solo editor/admin (null para jugadores). cupo_completo: visible para todos.
 select tc.id, tc.torneo_id, tc.categoria_id, c.nombre as categoria, c.genero, c.orden,
        tc.cupo_max, tc.cupo_min, tc.estado,
-       (select count(*) from public.inscripciones i where i.torneo_categoria_id = tc.id and i.estado = 'activa')::int as inscriptas
+       case when public.es_editor_o_admin() then n.cant end as inscriptas,
+       (n.cant >= tc.cupo_max) as cupo_completo
 from public.torneo_categorias tc
 join public.categorias c on c.id = tc.categoria_id
 join public.torneos t on t.id = tc.torneo_id
+cross join lateral (
+  select count(*)::int as cant from public.inscripciones i
+  where i.torneo_categoria_id = tc.id and i.estado = 'activa'
+) n
 where t.estado <> 'borrador' or public.es_admin();
 
 create view public.v_inscripciones as
@@ -1060,7 +1069,12 @@ select i.id, i.torneo_categoria_id, tc.torneo_id, tc.categoria_id, c.nombre as c
 from public.inscripciones i
 join public.torneo_categorias tc on tc.id = i.torneo_categoria_id
 join public.categorias c on c.id = tc.categoria_id
-join public.v_parejas vp on vp.id = i.pareja_id;
+join public.v_parejas vp on vp.id = i.pareja_id
+-- Mientras la categoría está en inscripción, un jugador solo ve las inscripciones de sus parejas.
+-- Con las zonas armadas las parejas ya son públicas (aparecen en zonas y partidos).
+where tc.estado <> 'inscripcion'
+   or public.es_editor_o_admin()
+   or public.es_miembro_pareja(i.pareja_id);
 
 create view public.v_partidos as
 select p.*, tc.torneo_id, tc.categoria_id, c.nombre as categoria, t.nombre as torneo,

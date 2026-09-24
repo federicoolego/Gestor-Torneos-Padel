@@ -29,7 +29,11 @@ export function TorneoTarjeta({ t, cats }: { t: Torneo; cats: TorneoCategoriaVis
         {cats.map((c) => (
           <li key={c.id} className="rounded-md bg-vidrio px-2 py-1 text-xs">
             <span className="font-semibold">{c.categoria}</span>
-            <span className="num ml-1.5 text-noche/60">{c.inscriptas}/{c.cupo_max}</span>
+            {c.inscriptas !== null ? (
+              <span className="num ml-1.5 text-noche/60">{c.inscriptas}/{c.cupo_max}</span>
+            ) : c.cupo_completo ? (
+              <span className="ml-1.5 text-noche/60">· cupo completo</span>
+            ) : null}
           </li>
         ))}
       </ul>

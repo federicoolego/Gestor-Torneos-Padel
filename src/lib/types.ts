@@ -71,7 +71,9 @@ export interface TorneoCategoriaVista {
   cupo_max: number
   cupo_min: number
   estado: EstadoCategoria
-  inscriptas: number
+  /** null para jugadores: solo editor/admin ven el total */
+  inscriptas: number | null
+  cupo_completo: boolean
 }
 
 export interface InscripcionVista {

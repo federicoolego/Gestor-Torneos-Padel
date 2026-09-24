@@ -51,8 +51,8 @@ export default function AdminTorneos() {
                       <tr key={c.id} className="border-t border-noche/5">
                         <td className="py-2 font-medium">{c.categoria}</td>
                         <td className="num">
-                          {c.inscriptas}/{c.cupo_max}
-                          {c.inscriptas < c.cupo_min && <span className="ml-2 text-xs text-amber-700">faltan {c.cupo_min - c.inscriptas} para el mínimo</span>}
+                          {c.inscriptas ?? 0}/{c.cupo_max}
+                          {(c.inscriptas ?? 0) < c.cupo_min && <span className="ml-2 text-xs text-amber-700">faltan {c.cupo_min - (c.inscriptas ?? 0)} para el mínimo</span>}
                         </td>
                         <td><Badge>{ESTADO_CATEGORIA_LABEL[c.estado]}</Badge></td>
                         <td className="text-right"><Link to={`/admin/torneos/${t.id}/categoria/${c.id}`} className="font-semibold text-cancha">Gestionar</Link></td>
