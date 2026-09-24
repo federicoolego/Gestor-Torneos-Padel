@@ -105,14 +105,18 @@ export default function Layout() {
 
 export function Marca({ oscuro = true }: { oscuro?: boolean }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <svg viewBox="0 0 32 32" className="h-8 w-8" aria-hidden>
-        <rect width="32" height="32" rx="7" fill="#1E4E8C" />
-        <rect x="6" y="6" width="20" height="20" fill="none" stroke="#fff" strokeWidth="1.6" />
-        <line x1="16" y1="6" x2="16" y2="26" stroke="#fff" strokeWidth="1.6" />
-        <circle cx="22" cy="11" r="3.4" fill="#DCF23A" />
-      </svg>
-      <span className={`font-display text-2xl font-bold leading-none ${oscuro ? 'text-white' : 'text-noche'}`}>Pádel Torneos</span>
+    <div className="flex items-center gap-3">
+      <img
+        src={`${import.meta.env.BASE_URL}logo-el-clasico.webp`}
+        alt="El Clásico Fútbol & Pádel"
+        width={44}
+        height={44}
+        className={`h-11 w-11 shrink-0 ${oscuro ? '' : 'rounded-lg'}`}
+      />
+      <div className="leading-none">
+        <span className={`block font-display text-2xl font-bold ${oscuro ? 'text-white' : 'text-noche'}`}>Torneos de Pádel</span>
+        <span className={`mt-0.5 block text-xs font-medium ${oscuro ? 'text-white/60' : 'text-noche/60'}`}>organiza El Clásico</span>
+      </div>
     </div>
   )
 }

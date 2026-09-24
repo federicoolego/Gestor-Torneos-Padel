@@ -7,19 +7,25 @@ import { Marca } from '../components/Layout'
 export function PantallaAcceso({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid min-h-screen lg:grid-cols-[1fr_1.1fr]">
-      <div className="relative hidden overflow-hidden bg-cancha lg:block">
-        {/* Líneas de la pista vistas desde arriba */}
+      <div className="relative hidden overflow-hidden bg-noche lg:block">
+        {/* Líneas de la pista vistas desde arriba, muy tenues detrás del logo */}
         <svg viewBox="0 0 400 800" className="absolute inset-0 h-full w-full" preserveAspectRatio="xMidYMid slice" aria-hidden>
-          <rect x="60" y="60" width="280" height="680" fill="none" stroke="#fff" strokeOpacity=".85" strokeWidth="4" />
-          <line x1="60" y1="400" x2="340" y2="400" stroke="#fff" strokeOpacity=".5" strokeWidth="10" />
-          <line x1="60" y1="250" x2="340" y2="250" stroke="#fff" strokeOpacity=".85" strokeWidth="4" />
-          <line x1="60" y1="550" x2="340" y2="550" stroke="#fff" strokeOpacity=".85" strokeWidth="4" />
-          <line x1="200" y1="250" x2="200" y2="550" stroke="#fff" strokeOpacity=".85" strokeWidth="4" />
-          <circle cx="262" cy="318" r="16" fill="#DCF23A" />
+          <g stroke="#fff" strokeOpacity=".12" strokeWidth="4" fill="none">
+            <rect x="60" y="60" width="280" height="680" />
+            <line x1="60" y1="250" x2="340" y2="250" />
+            <line x1="60" y1="550" x2="340" y2="550" />
+            <line x1="200" y1="250" x2="200" y2="550" />
+          </g>
+          <line x1="60" y1="400" x2="340" y2="400" stroke="#fff" strokeOpacity=".08" strokeWidth="10" />
         </svg>
-        <div className="absolute bottom-10 left-10 right-10">
-          <p className="font-display text-5xl font-bold leading-[0.95] text-white">Zonas, cruces y resultados de cada fecha.</p>
-          <p className="mt-3 text-sm text-white/75">Inscribí tu pareja, seguí tus partidos y mirá el cuadro en vivo.</p>
+        {/* Franja con los colores del escudo */}
+        <div className="absolute inset-x-0 top-0 flex h-1.5" aria-hidden>
+          <span className="flex-1 bg-cancha" /><span className="flex-1 bg-white" /><span className="flex-1 bg-clasico-rojo" />
+        </div>
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-10 text-center">
+          <img src={`${import.meta.env.BASE_URL}logo-el-clasico.webp`} alt="El Clásico Fútbol & Pádel" width={320} height={320} className="w-72 max-w-full" />
+          <p className="mt-6 font-display text-5xl font-bold leading-[0.95] text-white">Torneos de pádel del complejo El Clásico</p>
+          <p className="mt-3 max-w-md text-sm text-white/70">Inscribí tu pareja, seguí tus partidos y mirá el cuadro en vivo.</p>
         </div>
       </div>
       <div className="flex items-center justify-center px-6 py-12">

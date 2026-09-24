@@ -4,14 +4,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        noche: '#0E2240',   // texto principal, barra lateral
+        // Paleta tomada del logo de El Clásico
+        noche: '#0D053E',   // índigo del fondo del logo: texto principal, barra lateral
         cancha: {
-          DEFAULT: '#1E4E8C', // azul de cancha: acciones primarias
-          claro: '#2F6BB5',
-          suave: '#DCE7F4',
+          DEFAULT: '#0E599C', // azul del escudo: acciones primarias
+          claro: '#2474C4',
+          suave: '#DDE7F4',
         },
-        vidrio: '#EEF3F8',  // fondo general, como el cristal de la pista
-        pelota: '#DCF23A',  // acento: ganador / clasificado
+        clasico: {
+          rojo: '#DD2C40',  // rojo del escudo y la estrella
+          verde: '#7DB33A', // cinta "Fútbol & Pádel"
+        },
+        vidrio: '#F2F1F8',  // fondo general, con un toque del índigo
+        pelota: '#D2DA1F',  // amarillo de la pelota: ganador / clasificado
         red: { DEFAULT: '#B42318' },
       },
       fontFamily: {
