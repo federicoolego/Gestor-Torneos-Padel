@@ -11,6 +11,12 @@ export function setValido(a: number, b: number, superTiebreak: boolean): boolean
   return (mx === 6 && mn <= 4) || (mx === 7 && (mn === 5 || mn === 6))
 }
 
+/** Mismas reglas que public.set_unico_valido: gana quien llega a N; el otro queda en 0..N-1 */
+export function setUnicoValido(a: number, b: number, games: number): boolean {
+  if (Number.isNaN(a) || Number.isNaN(b) || a < 0 || b < 0) return false
+  return Math.max(a, b) === games && Math.min(a, b) < games
+}
+
 export interface ResultadoValidado {
   ok: boolean
   error?: string
@@ -18,8 +24,13 @@ export interface ResultadoValidado {
   ganador?: 'A' | 'B'
 }
 
-export function validarResultado(sets: SetInput[], superTiebreak3: boolean): ResultadoValidado {
+export function validarResultado(sets: SetInput[], superTiebreak3: boolean, gamesSetUnico: number | null = null): ResultadoValidado {
   const n = sets.map(([a, b]) => [a === '' ? NaN : Number(a), b === '' ? NaN : Number(b)] as [number, number])
+  if (gamesSetUnico !== null) {
+    if (!setUnicoValido(n[0][0], n[0][1], gamesSetUnico))
+      return { ok: false, error: `Se juega a un set de ${gamesSetUnico} games: el ganador llega a ${gamesSetUnico} (ej. ${gamesSetUnico}-${gamesSetUnico - 3})` }
+    return { ok: true, sets: [n[0][0], n[0][1], null, null, null, null], ganador: n[0][0] > n[0][1] ? 'A' : 'B' }
+  }
   for (let i = 0; i < 2; i++) {
     if (!setValido(n[i][0], n[i][1], false))
       return { ok: false, error: `Set ${i + 1}: los sets terminan 6-0 a 6-4, 7-5 o 7-6` }
@@ -66,4 +77,10 @@ export function resumenSets(p: PartidoVista): string {
     .filter(([a, b]) => a !== null && b !== null)
     .map(([a, b]) => `${a}-${b}`)
     .join(' / ')
+}
+
+/** Texto corto del formato de partido, para badges y ayudas */
+export function formatoPartido(p: Pick<PartidoVista, 'fase' | 'super_tiebreak' | 'games_set_unico'>): string {
+  if (p.games_set_unico !== null) return `Un set a ${p.games_set_unico} games`
+  return p.fase === 'zona' && p.super_tiebreak ? '3er set: super tiebreak' : 'Al mejor de 3'
 }

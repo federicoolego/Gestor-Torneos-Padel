@@ -17,6 +17,7 @@ import TorneoForm from './pages/admin/TorneoForm'
 import AdminTorneoCategoria from './pages/admin/AdminTorneoCategoria'
 import AdminJugadores from './pages/admin/AdminJugadores'
 import AdminSedes from './pages/admin/AdminSedes'
+import AdminCategorias from './pages/admin/AdminCategorias'
 
 function Privada({ children, soloAdmin }: { children: ReactNode; soloAdmin?: boolean }) {
   const { session, jugador, cargando, esAdmin } = useAuth()
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="/admin/torneos/:id/categoria/:tcId" element={<Privada soloAdmin><AdminTorneoCategoria /></Privada>} />
         <Route path="/admin/jugadores" element={<Privada soloAdmin><AdminJugadores /></Privada>} />
         <Route path="/admin/sedes" element={<Privada soloAdmin><AdminSedes /></Privada>} />
+        <Route path="/admin/categorias" element={<Privada soloAdmin><AdminCategorias /></Privada>} />
       </Route>
       <Route path="*" element={<Navigate to="/torneos" replace />} />
     </Routes>

@@ -24,6 +24,7 @@ export function TorneoTarjeta({ t, cats }: { t: Torneo; cats: TorneoCategoriaVis
       <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-noche/70">
         <span className="inline-flex items-center gap-1.5"><CalendarRange className="h-4 w-4" aria-hidden />{rangoFechas(t.fecha_desde, t.fecha_hasta)}</span>
         {abierta && <span className="inline-flex items-center gap-1.5"><Hourglass className="h-4 w-4" aria-hidden />{faltaPara(t.cierre_inscripcion)}</span>}
+        {t.americano && <span className="font-semibold text-noche">Americano · un set a {t.games_set_unico} games</span>}
       </div>
       <ul className="mt-4 flex flex-wrap gap-2">
         {cats.map((c) => (

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { supabase, mensajeError } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import type { EstadoTorneo, Torneo, TorneoCategoriaVista } from '../../lib/types'
+import type { Categoria, EstadoTorneo, Torneo, TorneoCategoriaVista } from '../../lib/types'
 import { aInputLocal, desdeInputLocal, ESTADO_TORNEO_LABEL } from '../../lib/formato'
 import { Alerta, Button, Card, Field, Input, Select, Spinner, Textarea, Titulo } from '../../components/ui'
 
@@ -18,6 +18,7 @@ export default function TorneoForm() {
   const [f, setF] = useState({
     nombre: '', descripcion: '', fecha_desde: '', fecha_hasta: '', cierre: '',
     observaciones: '', precio: '', estado: 'borrador' as EstadoTorneo,
+    americano: false, games: 9,
   })
   const [cats, setCats] = useState<Record<number, CatForm>>({})
   const [error, setError] = useState('')
@@ -39,6 +40,7 @@ export default function TorneoForm() {
           nombre: tor.nombre, descripcion: tor.descripcion ?? '', fecha_desde: tor.fecha_desde, fecha_hasta: tor.fecha_hasta,
           cierre: aInputLocal(tor.cierre_inscripcion), observaciones: tor.observaciones ?? '',
           precio: tor.precio_inscripcion?.toString() ?? '', estado: tor.estado,
+          americano: tor.americano, games: tor.games_set_unico ?? 9,
         })
       }
       ;((tc.data as TorneoCategoriaVista[]) ?? []).forEach((c) => {
@@ -52,14 +54,16 @@ export default function TorneoForm() {
   async function guardar(e: FormEvent) {
     e.preventDefault()
     setError(''); setOk('')
-    if (f.fecha_hasta < f.fecha_desde) return setError('La fecha hasta no puede ser anterior a la fecha desde')
+    const fechaHasta = f.americano ? f.fecha_desde : f.fecha_hasta
+    if (fechaHasta < f.fecha_desde) return setError('La fecha hasta no puede ser anterior a la fecha desde')
     if (!Object.values(cats).some((c) => c.activa)) return setError('Habilitá al menos una categoría')
     const quitadasConInscriptos = Object.entries(cats).filter(([, c]) => !c.activa && c.tcId && c.inscriptas > 0)
     if (quitadasConInscriptos.length) return setError('No podés quitar categorías que ya tienen parejas inscriptas')
 
     setGuardando(true)
     const datos = {
-      nombre: f.nombre.trim(), descripcion: f.descripcion.trim() || null, fecha_desde: f.fecha_desde, fecha_hasta: f.fecha_hasta,
+      nombre: f.nombre.trim(), descripcion: f.descripcion.trim() || null, fecha_desde: f.fecha_desde, fecha_hasta: fechaHasta,
+      americano: f.americano, games_set_unico: f.americano ? f.games : null,
       cierre_inscripcion: desdeInputLocal(f.cierre), observaciones: f.observaciones.trim() || null,
       precio_inscripcion: f.precio ? Number(f.precio) : null, estado: f.estado,
     }
@@ -97,8 +101,31 @@ export default function TorneoForm() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2"><Field label="Nombre"><Input value={f.nombre} onChange={set('nombre')} required /></Field></div>
             <div className="sm:col-span-2"><Field label="Descripción"><Textarea value={f.descripcion} onChange={set('descripcion')} /></Field></div>
-            <Field label="Fecha desde"><Input type="date" value={f.fecha_desde} onChange={set('fecha_desde')} required /></Field>
-            <Field label="Fecha hasta"><Input type="date" value={f.fecha_hasta} onChange={set('fecha_hasta')} required /></Field>
+            <div className="sm:col-span-2 rounded-lg bg-vidrio p-3">
+              <label className="flex items-center gap-2 text-sm font-semibold">
+                <input type="checkbox" checked={f.americano} onChange={(e) => setF({ ...f, americano: e.target.checked })} />
+                Torneo americano
+              </label>
+              <p className="mt-1 text-xs text-noche/60">Se juega en el día, a un solo set. No se puede cambiar una vez cargados resultados.</p>
+              {f.americano && (
+                <div className="mt-3 flex items-center gap-2 text-sm">
+                  Un set a
+                  <Select value={f.games} onChange={(e) => setF({ ...f, games: Number(e.target.value) })} className="w-20 py-1" aria-label="Games por set">
+                    <option value={7}>7</option>
+                    <option value={9}>9</option>
+                  </Select>
+                  games
+                </div>
+              )}
+            </div>
+            {f.americano ? (
+              <Field label="Fecha"><Input type="date" value={f.fecha_desde} onChange={set('fecha_desde')} required /></Field>
+            ) : (
+              <>
+                <Field label="Fecha desde"><Input type="date" value={f.fecha_desde} onChange={set('fecha_desde')} required /></Field>
+                <Field label="Fecha hasta"><Input type="date" value={f.fecha_hasta} onChange={set('fecha_hasta')} required /></Field>
+              </>
+            )}
             <Field label="Cierre de inscripción" hint="Fecha y hora; después no se puede cancelar ni editar."><Input type="datetime-local" value={f.cierre} onChange={set('cierre')} required /></Field>
             <Field label="Precio de inscripción (por pareja)"><Input type="number" min="0" step="100" value={f.precio} onChange={set('precio')} /></Field>
             <div className="sm:col-span-2"><Field label="Observaciones"><Textarea value={f.observaciones} onChange={set('observaciones')} placeholder="Premios, pelotas, reglamento, etc." /></Field></div>
@@ -114,8 +141,14 @@ export default function TorneoForm() {
         <Card>
           <h2 className="font-display text-2xl font-bold">Categorías</h2>
           <p className="mb-4 text-xs text-noche/60">Cupo máximo 24 parejas, mínimo 6 para que se arme la categoría.</p>
+          {([
+            ['Por categoría', categorias.filter((c) => c.tipo === 'nivel')],
+            ['Por suma', categorias.filter((c) => c.tipo === 'suma')],
+          ] as [string, Categoria[]][]).map(([titulo, lista]) => (
+          <div key={titulo} className="mb-4">
+          <h3 className="mb-1 text-xs font-semibold text-noche/55">{titulo}</h3>
           <ul className="divide-y divide-noche/10">
-            {categorias.map((c) => {
+            {lista.filter((c) => c.activa || cats[c.id]?.tcId).map((c) => {
               const v = cats[c.id]
               if (!v) return null
               const upd = (p: Partial<CatForm>) => setCats({ ...cats, [c.id]: { ...v, ...p } })
@@ -137,6 +170,8 @@ export default function TorneoForm() {
               )
             })}
           </ul>
+          </div>
+          ))}
         </Card>
         <div className="lg:col-span-2">
           {error && <div className="mb-3"><Alerta tipo="error">{error}</Alerta></div>}

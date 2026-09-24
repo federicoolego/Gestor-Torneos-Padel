@@ -11,6 +11,7 @@ interface AuthState {
   esAdmin: boolean
   esEditor: boolean
   refrescar: () => Promise<void>
+  recargarCategorias: () => Promise<void>
   salir: () => Promise<void>
 }
 
@@ -31,12 +32,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setJugador((data as Jugador) ?? null)
   }, [])
 
+  const recargarCategorias = useCallback(async () => {
+    const { data } = await supabase.from('categorias').select('*').order('orden')
+    setCategorias((data as Categoria[]) ?? [])
+  }, [])
+
   useEffect(() => {
-    supabase
-      .from('categorias')
-      .select('*')
-      .order('orden')
-      .then(({ data }) => setCategorias((data as Categoria[]) ?? []))
+    recargarCategorias()
 
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session)
@@ -50,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTimeout(() => cargarJugador(s), 0)
     })
     return () => sub.subscription.unsubscribe()
-  }, [cargarJugador])
+  }, [cargarJugador, recargarCategorias])
 
   const value: AuthState = {
     session,
@@ -60,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     esAdmin: jugador?.rol === 'administrador',
     esEditor: jugador?.rol === 'editor' || jugador?.rol === 'administrador',
     refrescar: () => cargarJugador(session),
+    recargarCategorias,
     salir: async () => {
       await supabase.auth.signOut()
       setJugador(null)

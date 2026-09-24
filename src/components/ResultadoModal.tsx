@@ -40,7 +40,7 @@ export default function ResultadoModal({
       if (!ganadorWo) return setError('Elegí qué pareja gana por W.O.')
       cambios = { estado: 'wo', ganador_id: ganadorWo }
     } else {
-      const r = validarResultado(sets, p.super_tiebreak)
+      const r = validarResultado(sets, p.super_tiebreak, p.games_set_unico)
       if (!r.ok) return setError(r.error!)
       const [s1a, s1b, s2a, s2b, s3a, s3b] = r.sets!
       cambios = { estado: 'finalizado', s1_a: s1a, s1_b: s1b, s2_a: s2a, s2_b: s2b, s3_a: s3a, s3_b: s3b }
@@ -61,7 +61,8 @@ export default function ResultadoModal({
     onGuardado()
   }
 
-  const etiquetasSet = ['1er set', '2do set', p.super_tiebreak ? 'Super tiebreak' : '3er set']
+  const setUnico = p.games_set_unico !== null
+  const etiquetasSet = setUnico ? ['Games'] : ['1er set', '2do set', p.super_tiebreak ? 'Super tiebreak' : '3er set']
 
   return (
     <Modal abierto titulo={etiquetaPartido(p)} onCerrar={onCerrar}>
@@ -90,7 +91,7 @@ export default function ResultadoModal({
               {([0, 1] as const).map((lado) => (
                 <tr key={lado}>
                   <td className="py-1.5 pr-3 font-medium">{lado === 0 ? p.pareja_a : p.pareja_b}</td>
-                  {[0, 1, 2].map((i) => (
+                  {etiquetasSet.map((_, i) => (
                     <td key={i} className="px-1 py-1.5">
                       <Input
                         inputMode="numeric"
@@ -106,9 +107,11 @@ export default function ResultadoModal({
             </tbody>
           </table>
           <p className="mt-2 text-xs text-noche/60">
-            {p.super_tiebreak
-              ? 'Partido de zona: si hay 1-1 en sets, el tercero es super tiebreak a 11.'
-              : 'Playoff: al mejor de 3 sets completos.'}
+            {setUnico
+              ? `Americano: un solo set a ${p.games_set_unico} games. El ganador llega a ${p.games_set_unico}.`
+              : p.super_tiebreak
+                ? 'Partido de zona: si hay 1-1 en sets, el tercero es super tiebreak a 11.'
+                : 'Playoff: al mejor de 3 sets completos.'}
           </p>
         </div>
       ) : (

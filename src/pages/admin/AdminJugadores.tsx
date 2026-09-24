@@ -8,6 +8,7 @@ import { Alerta, Button, Input, Modal, Select, Spinner, Titulo, Vacio } from '..
 
 export default function AdminJugadores() {
   const { categorias, jugador: yo } = useAuth()
+  const catsNivel = categorias.filter((c) => c.tipo === 'nivel')
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('')
   const [lista, setLista] = useState<Jugador[] | null>(null)
@@ -70,7 +71,7 @@ export default function AdminJugadores() {
         </div>
         <Select value={cat} onChange={(e) => setCat(e.target.value)} className="w-48" aria-label="Filtrar por categoría">
           <option value="">Todas las categorías</option>
-          {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          {catsNivel.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </Select>
       </div>
       {msg && <div className="mb-4"><Alerta tipo={msg.tipo}>{msg.txt}</Alerta></div>}
@@ -107,7 +108,7 @@ export default function AdminJugadores() {
                           actualizar(j, { categoria_id: nueva.id }, `${j.apellido} ahora es ${nueva.nombre}`)
                       }}
                     >
-                      {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                      {catsNivel.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </Select>
                   </td>
                   <td className="pr-3">

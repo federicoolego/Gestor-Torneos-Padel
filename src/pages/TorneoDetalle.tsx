@@ -90,6 +90,7 @@ export default function TorneoDetalle() {
             <h1 className="font-display text-4xl font-bold leading-none sm:text-5xl">{torneo.nombre}</h1>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-white/75">
               <span className="inline-flex items-center gap-1.5"><CalendarRange className="h-4 w-4" aria-hidden />{rangoFechas(torneo.fecha_desde, torneo.fecha_hasta)}</span>
+              {torneo.americano && <span className="font-semibold text-noche">Americano · un set a {torneo.games_set_unico} games</span>}
               <span className="inline-flex items-center gap-1.5"><Hourglass className="h-4 w-4" aria-hidden />
                 {inscripcionAbierta(torneo) ? faltaPara(torneo.cierre_inscripcion) : `Inscripción cerró el ${fechaHora(torneo.cierre_inscripcion)}`}
               </span>

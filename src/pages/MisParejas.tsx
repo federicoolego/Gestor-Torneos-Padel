@@ -3,7 +3,7 @@ import { UserPlus } from 'lucide-react'
 import { supabase, mensajeError } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import type { ParejaVista } from '../lib/types'
-import { categoriasHabilitadas } from '../lib/categorias'
+import { categoriasHabilitadas, GENERO_LABEL, sumaPareja } from '../lib/categorias'
 import { Alerta, Badge, Button, Card, Field, Input, Modal, Spinner, Titulo, Vacio } from '../components/ui'
 
 interface Encontrado { id: string; nombre: string; apellido: string; categoria_id: number; categoria: string }
@@ -54,7 +54,10 @@ export default function MisParejas() {
             const soyUno = p.jugador1_id === jugador!.id
             const companero = soyUno ? p.jugador2 : p.jugador1
             const catCompa = soyUno ? p.categoria2 : p.categoria1
-            const habil = categoriasHabilitadas(cat(p.categoria1_id), cat(p.categoria2_id), categorias)
+            const habil = categoriasHabilitadas(cat(p.categoria1_id), cat(p.categoria2_id), categorias).filter((c) => c.tipo === 'nivel')
+            const sumas = (['caballeros', 'damas', 'mixto'] as const)
+              .map((g) => ({ g, s: sumaPareja(cat(p.categoria1_id), cat(p.categoria2_id), g) }))
+              .filter((x): x is { g: typeof x.g; s: number } => x.s !== null)
             return (
               <Card key={p.id} className={p.activa ? '' : 'opacity-60'}>
                 <div className="flex items-start justify-between gap-3">
@@ -70,6 +73,12 @@ export default function MisParejas() {
                   <div className="flex flex-wrap gap-1.5">
                     {habil.length ? habil.map((c) => <Badge key={c.id} tono="azul">{c.nombre}</Badge>) : <span className="text-sm text-noche/60">Ninguna categoría</span>}
                   </div>
+                  {sumas.length > 0 && (
+                    <p className="mt-2 text-xs text-noche/60">
+                      Americanos por suma: {sumas.map(({ g, s }) => `${GENERO_LABEL[g]} suma ${s}`).join(' · ')}.
+                      Juegan en esa suma o menores.
+                    </p>
+                  )}
                 </div>
                 <div className="mt-4 flex justify-end border-t border-noche/10 pt-3">
                   <Button variante={p.activa ? 'fantasma' : 'secundario'} onClick={() => alternar(p)}>

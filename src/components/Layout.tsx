@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin } from 'lucide-react'
+import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { ROL_LABEL } from '../lib/formato'
 
@@ -14,6 +14,7 @@ const MENU = [
 const ADMIN = [
   { to: '/admin/torneos', label: 'Armado de torneos', icono: Settings2 },
   { to: '/admin/jugadores', label: 'Jugadores', icono: IdCard },
+  { to: '/admin/categorias', label: 'Categorías', icono: Layers },
   { to: '/admin/sedes', label: 'Sedes', icono: MapPin },
 ]
 

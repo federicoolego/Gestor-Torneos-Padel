@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { MapPin, Clock, Pencil } from 'lucide-react'
 import type { PartidoVista } from '../lib/types'
 import { FASE_LABEL, fechaHora } from '../lib/formato'
-import { setsDe } from '../lib/resultado'
+import { formatoPartido, setsDe } from '../lib/resultado'
 import { Badge, Button } from './ui'
 import ResultadoModal from './ResultadoModal'
 
@@ -102,7 +102,7 @@ export function PartidoFila({
             {p.sede ?? 'Sede a confirmar'}{p.cancha ? ` · Cancha ${p.cancha}` : ''}
           </span>
         </div>
-        {p.estado === 'pendiente' && <Badge>{p.fase === 'zona' && p.super_tiebreak ? '3er set: super tiebreak' : 'Al mejor de 3'}</Badge>}
+        {p.estado === 'pendiente' && <Badge>{formatoPartido(p)}</Badge>}
       </div>
       <Marcador p={p} resaltarIds={resaltarIds} />
       {editable && (

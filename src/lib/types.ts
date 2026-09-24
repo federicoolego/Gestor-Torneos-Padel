@@ -1,16 +1,22 @@
 export type Rol = 'jugador' | 'editor' | 'administrador'
-export type Genero = 'caballeros' | 'damas'
+export type Genero = 'caballeros' | 'damas' | 'mixto'
 export type EstadoTorneo = 'borrador' | 'publicado' | 'en_curso' | 'finalizado' | 'cancelado'
 export type EstadoCategoria = 'inscripcion' | 'zonas' | 'playoff' | 'finalizada' | 'suspendida'
 export type EstadoInscripcion = 'activa' | 'cancelada'
 export type Fase = 'zona' | 'dieciseisavos' | 'octavos' | 'cuartos' | 'semifinal' | 'final'
 export type EstadoPartido = 'pendiente' | 'finalizado' | 'wo' | 'bye'
 
+export type TipoCategoria = 'nivel' | 'suma'
+
 export interface Categoria {
   id: number
   nombre: string
   genero: Genero
-  nivel: number
+  /** 'nivel' = 3ra..7ma (categoría propia del jugador); 'suma' = Suma 8..14 */
+  tipo: TipoCategoria
+  nivel: number | null
+  suma: number | null
+  activa: boolean
   orden: number
 }
 
@@ -60,6 +66,9 @@ export interface Torneo {
   observaciones: string | null
   precio_inscripcion: number | null
   estado: EstadoTorneo
+  /** Americano: se juega en el día a un solo set de games_set_unico games */
+  americano: boolean
+  games_set_unico: number | null
 }
 
 export interface TorneoCategoriaVista {
@@ -75,6 +84,8 @@ export interface TorneoCategoriaVista {
   /** null para jugadores: solo editor/admin ven el total */
   inscriptas: number | null
   cupo_completo: boolean
+  tipo: TipoCategoria
+  suma: number | null
 }
 
 export interface InscripcionVista {
@@ -172,6 +183,8 @@ export interface PartidoVista {
   pareja_a_j2_id: string | null
   pareja_b_j1_id: string | null
   pareja_b_j2_id: string | null
+  /** null = formato estándar (al mejor de 3); número = set único a N games */
+  games_set_unico: number | null
 }
 
 export interface InscriptoAdmin {
