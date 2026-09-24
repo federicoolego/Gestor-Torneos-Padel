@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Copy, KeyRound, Search } from 'lucide-react'
 import { supabase, mensajeError } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import type { Jugador, Rol } from '../../lib/types'
 import { ROL_LABEL } from '../../lib/formato'
-import { Alerta, Input, Select, Spinner, Titulo, Vacio } from '../../components/ui'
+import { Alerta, Button, Input, Modal, Select, Spinner, Titulo, Vacio } from '../../components/ui'
 
 export default function AdminJugadores() {
   const { categorias, jugador: yo } = useAuth()
@@ -12,6 +12,7 @@ export default function AdminJugadores() {
   const [cat, setCat] = useState('')
   const [lista, setLista] = useState<Jugador[] | null>(null)
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; txt: string } | null>(null)
+  const [reset, setReset] = useState<{ j: Jugador; pass?: string; error?: string; cargando?: boolean; copiado?: boolean } | null>(null)
 
   const buscar = useCallback(async () => {
     let query = supabase.from('jugadores').select('*').order('apellido').order('nombre').limit(100)
@@ -33,6 +34,30 @@ export default function AdminJugadores() {
     if (error) return setMsg({ tipo: 'error', txt: mensajeError(error) })
     setMsg({ tipo: 'ok', txt })
     buscar()
+  }
+
+  async function resetear() {
+    if (!reset) return
+    setReset({ ...reset, cargando: true, error: undefined })
+    const { data, error } = await supabase.rpc('admin_resetear_password', { p_jugador: reset.j.id })
+    if (error) return setReset({ ...reset, cargando: false, error: mensajeError(error) })
+    setReset({ ...reset, cargando: false, pass: data as string })
+    buscar()
+  }
+
+  const mensajeReset = (j: Jugador, pass: string) =>
+    `Hola ${j.nombre}, te reseteé la contraseña de Torneos de Pádel El Clásico.\n` +
+    `Entrá con tu DNI (${j.dni}) y la clave temporal: ${pass}\n` +
+    `Al ingresar te va a pedir que elijas una nueva.`
+
+  async function copiar() {
+    if (!reset?.pass) return
+    try {
+      await navigator.clipboard.writeText(mensajeReset(reset.j, reset.pass))
+      setReset({ ...reset, copiado: true })
+    } catch {
+      /* sin permiso de portapapeles: la clave queda visible para copiarla a mano */
+    }
   }
 
   return (
@@ -59,7 +84,8 @@ export default function AdminJugadores() {
                 <th className="py-2 font-medium">Teléfono</th>
                 <th className="py-2 font-medium">Categoría</th>
                 <th className="py-2 font-medium">Rol</th>
-                <th className="px-4 py-2 font-medium">Activo</th>
+                <th className="py-2 font-medium">Activo</th>
+                <th className="px-4 py-2 font-medium"><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
@@ -94,7 +120,7 @@ export default function AdminJugadores() {
                       {(Object.keys(ROL_LABEL) as Rol[]).map((r) => <option key={r} value={r}>{ROL_LABEL[r]}</option>)}
                     </Select>
                   </td>
-                  <td className="px-4">
+                  <td>
                     <input
                       type="checkbox"
                       checked={j.activo}
@@ -103,6 +129,17 @@ export default function AdminJugadores() {
                       onChange={() => actualizar(j, { activo: !j.activo }, j.activo ? 'Jugador desactivado' : 'Jugador activado')}
                     />
                   </td>
+                  <td className="px-4 text-right">
+                    {j.id !== yo?.id && (
+                      <button
+                        onClick={() => setReset({ j })}
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-cancha hover:underline"
+                      >
+                        <KeyRound className="h-3.5 w-3.5" aria-hidden /> Resetear contraseña
+                      </button>
+                    )}
+                    {j.debe_cambiar_password && <p className="mt-0.5 text-[11px] text-noche/50">Clave temporal pendiente</p>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -110,6 +147,35 @@ export default function AdminJugadores() {
         </div>
       )}
       <p className="mt-3 text-xs text-noche/55">Se muestran hasta 100 jugadores; usá la búsqueda para encontrar el resto.</p>
+
+      <Modal abierto={!!reset} titulo="Resetear contraseña" onCerrar={() => setReset(null)}>
+        {reset && !reset.pass && (
+          <div className="space-y-4">
+            <p className="text-sm">
+              Se va a generar una clave temporal para <strong>{reset.j.nombre} {reset.j.apellido}</strong> (DNI {reset.j.dni}).
+              Se cierran sus sesiones abiertas y, al entrar, la app le pide elegir una nueva.
+            </p>
+            {reset.error && <Alerta tipo="error">{reset.error}</Alerta>}
+            <div className="flex justify-end gap-2">
+              <Button variante="fantasma" onClick={() => setReset(null)}>Cancelar</Button>
+              <Button onClick={resetear} cargando={reset.cargando}>Generar clave temporal</Button>
+            </div>
+          </div>
+        )}
+        {reset?.pass && (
+          <div className="space-y-4">
+            <p className="text-sm">Clave temporal de <strong>{reset.j.nombre} {reset.j.apellido}</strong>:</p>
+            <p className="num select-all rounded-lg bg-vidrio px-4 py-3 text-center font-display text-3xl font-bold tracking-[0.2em]">{reset.pass}</p>
+            <Alerta tipo="aviso">Copiala ahora: por seguridad no se vuelve a mostrar. Si la perdés, generá otra.</Alerta>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variante="secundario" onClick={copiar}>
+                <Copy className="h-4 w-4" aria-hidden /> {reset.copiado ? 'Mensaje copiado' : 'Copiar mensaje para enviar'}
+              </Button>
+              <Button onClick={() => setReset(null)}>Listo</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
   )
 }

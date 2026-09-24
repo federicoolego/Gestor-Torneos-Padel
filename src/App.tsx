@@ -6,6 +6,7 @@ import { Spinner } from './components/ui'
 import Login from './pages/Login'
 import Registro from './pages/Registro'
 import Perfil from './pages/Perfil'
+import CambiarPassword from './pages/CambiarPassword'
 import Torneos from './pages/Torneos'
 import TorneoDetalle from './pages/TorneoDetalle'
 import MisInscripciones from './pages/MisInscripciones'
@@ -22,6 +23,7 @@ function Privada({ children, soloAdmin }: { children: ReactNode; soloAdmin?: boo
   if (cargando) return <div className="px-6"><Spinner /></div>
   if (!session) return <Navigate to="/login" replace />
   if (!jugador) return <SinPerfil />
+  if (jugador.debe_cambiar_password) return <CambiarPassword />
   if (soloAdmin && !esAdmin) return <Navigate to="/torneos" replace />
   return <>{children}</>
 }

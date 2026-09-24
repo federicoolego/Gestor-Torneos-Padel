@@ -80,6 +80,7 @@ create table public.jugadores (
   categoria_id  smallint not null references public.categorias(id),
   rol           public.rol_usuario not null default 'jugador',
   activo        boolean not null default true,
+  debe_cambiar_password boolean not null default false, -- true tras un reseteo del admin
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
@@ -363,6 +364,9 @@ begin
     end if;
     if new.activo is distinct from old.activo then
       raise exception 'Solo el administrador puede activar o desactivar jugadores';
+    end if;
+    if new.debe_cambiar_password and not old.debe_cambiar_password then
+      raise exception 'Solo el administrador puede resetear contraseñas';
     end if;
   end if;
 
@@ -1140,6 +1144,51 @@ begin
   where i.torneo_categoria_id = p_torneo_categoria
   order by i.estado, i.created_at;
 end $$;
+
+-- ---------------------------------------------------------------------
+-- 12b. Reseteo de contraseña por el administrador
+-- ---------------------------------------------------------------------
+-- Genera una clave temporal legible (sin 0/O, 1/l/I), la guarda hasheada con bcrypt
+-- en auth.users, cierra las sesiones abiertas del jugador y lo obliga a cambiarla al entrar.
+-- La clave en texto plano solo se devuelve una vez, al admin que la generó.
+create or replace function public.admin_resetear_password(p_jugador uuid)
+returns text language plpgsql volatile security definer set search_path = public, extensions as $$
+declare
+  v_alfabeto constant text := 'abcdefghjkmnpqrstuvwxyz23456789';
+  v_bytes bytea := extensions.gen_random_bytes(8);
+  v_pass text := '';
+  i int;
+begin
+  if not public.es_admin() then
+    raise exception 'Solo el administrador puede resetear contraseñas';
+  end if;
+  if p_jugador = auth.uid() then
+    raise exception 'Tu propia contraseña cambiala desde Perfil';
+  end if;
+  if not exists (select 1 from public.jugadores where id = p_jugador) then
+    raise exception 'Jugador inexistente';
+  end if;
+
+  for i in 0..7 loop
+    v_pass := v_pass || substr(v_alfabeto, (get_byte(v_bytes, i) % length(v_alfabeto)) + 1, 1);
+  end loop;
+
+  update auth.users
+     set encrypted_password = extensions.crypt(v_pass, extensions.gen_salt('bf')),
+         updated_at = now()
+   where id = p_jugador;
+
+  delete from auth.sessions where user_id = p_jugador;  -- cierra sesiones abiertas (cascadea refresh tokens)
+
+  update public.jugadores set debe_cambiar_password = true where id = p_jugador;
+  return v_pass;
+end $$;
+
+-- El jugador la llama después de cambiar su contraseña con supabase.auth.updateUser
+create or replace function public.marcar_password_cambiada()
+returns void language sql volatile security definer set search_path = public as $$
+  update public.jugadores set debe_cambiar_password = false where id = auth.uid()
+$$;
 
 -- ---------------------------------------------------------------------
 -- 13. Row Level Security

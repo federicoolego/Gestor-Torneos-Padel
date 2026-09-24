@@ -24,6 +24,7 @@ export interface Jugador {
   categoria_id: number
   rol: Rol
   activo: boolean
+  debe_cambiar_password: boolean
   created_at: string
 }
 
