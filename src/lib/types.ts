@@ -38,8 +38,16 @@ export interface Sede {
   id: string
   nombre: string
   direccion: string | null
-  /** cantidad de canchas del complejo */
-  canchas: number
+  activa: boolean
+  /** viene cuando se pide con select('*, canchas(*)') */
+  canchas?: Cancha[]
+}
+
+export interface Cancha {
+  id: string
+  sede_id: string
+  nombre: string
+  orden: number
   activa: boolean
 }
 
@@ -156,7 +164,7 @@ export interface PartidoVista {
   pareja_a_id: string | null
   pareja_b_id: string | null
   sede_id: string | null
-  cancha: string | null
+  cancha_id: string | null
   fecha_hora: string | null
   super_tiebreak: boolean
   s1_a: number | null
@@ -175,6 +183,8 @@ export interface PartidoVista {
   categoria: string
   zona: string | null
   sede: string | null
+  /** nombre de la cancha (Blindex, Cancha 1…) */
+  cancha: string | null
   pareja_a: string | null
   pareja_a_j1: string | null
   pareja_a_j2: string | null

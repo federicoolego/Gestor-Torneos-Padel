@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X } from 'lucide-react'
+import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X, BarChart3 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { ROL_LABEL } from '../lib/formato'
 
@@ -14,9 +14,10 @@ const MENU = [
 
 const ADMIN = [
   { to: '/admin/torneos', label: 'Armado de torneos', icono: Settings2 },
+  { to: '/admin/estadisticas', label: 'Estadísticas', icono: BarChart3 },
   { to: '/admin/jugadores', label: 'Jugadores', icono: IdCard },
   { to: '/admin/categorias', label: 'Categorías', icono: Layers },
-  { to: '/admin/sedes', label: 'Sedes', icono: MapPin },
+  { to: '/admin/sedes', label: 'Sedes y canchas', icono: MapPin },
 ]
 
 function Enlace({ to, label, icono: Icono }: (typeof MENU)[number]) {
@@ -150,7 +151,6 @@ export function Marca({ oscuro = true }: { oscuro?: boolean }) {
       />
       <div className="leading-none">
         <span className={`block font-display text-2xl font-bold ${oscuro ? 'text-white' : 'text-noche'}`}>Torneos de Pádel</span>
-        <span className={`mt-0.5 block text-xs font-medium ${oscuro ? 'text-white/60' : 'text-noche/60'}`}>organiza El Clásico</span>
       </div>
     </div>
   )

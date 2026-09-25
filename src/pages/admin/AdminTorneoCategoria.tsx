@@ -34,7 +34,7 @@ export default function AdminTorneoCategoria() {
       supabase.rpc('admin_inscriptos', { p_torneo_categoria: tcId }),
       supabase.from('zonas').select('*, zona_parejas(inscripcion_id, posicion_sorteo)').eq('torneo_categoria_id', tcId!).order('nombre'),
       supabase.from('v_partidos').select('*').eq('torneo_categoria_id', tcId!).order('ronda').order('orden'),
-      supabase.from('sedes').select('*').eq('activa', true).order('nombre'),
+      supabase.from('sedes').select('*, canchas(*)').eq('activa', true).order('nombre'),
     ])
     const tor = t.data as Torneo | null
     if (tor) {

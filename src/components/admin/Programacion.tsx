@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { supabase, mensajeError } from '../../lib/supabase'
-import type { PartidoVista, Sede } from '../../lib/types'
+import type { Cancha, PartidoVista, Sede } from '../../lib/types'
 import { aInputLocal, desdeInputLocal } from '../../lib/formato'
 import { resumenSets } from '../../lib/resultado'
 import { Alerta, Button, Card, Input, Select, Vacio } from '../ui'
@@ -13,7 +13,9 @@ const diaDe = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZ
 const horaDe = (iso: string) => new Date(iso).toLocaleTimeString('es-AR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false })
 const diaLargo = (d: string) =>
   new Date(`${d}T12:00:00-03:00`).toLocaleDateString('es-AR', { timeZone: TZ, weekday: 'short', day: '2-digit', month: '2-digit' })
-const numCancha = (c: string | null | undefined) => (c ?? '').replace(/^cancha\s*/i, '').trim()
+/** canchas activas de una sede, en orden */
+export const canchasDe = (s: Sede | undefined): Cancha[] =>
+  (s?.canchas ?? []).filter((c) => c.activa).sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre))
 const jugadoresDe = (p: PartidoVista) =>
   [p.pareja_a_j1_id, p.pareja_a_j2_id, p.pareja_b_j1_id, p.pareja_b_j2_id].filter(Boolean) as string[]
 const nombreJugador = (p: PartidoVista, id: string) =>
@@ -22,7 +24,7 @@ const nombreJugador = (p: PartidoVista, id: string) =>
 const duracion = (p: PartidoVista) => (p.games_set_unico !== null ? 40 : 75)
 
 /** Choques de cancha y de jugadores para un partido con la sede/cancha/horario propuestos */
-function choques(p: PartidoVista, sede: string, cancha: string, fhIso: string | null, ocupados: PartidoVista[]): string[] {
+function choques(p: PartidoVista, cancha: string, fhIso: string | null, ocupados: PartidoVista[]): string[] {
   if (!fhIso) return []
   const t = new Date(fhIso).getTime()
   const mios = new Set(jugadoresDe(p))
@@ -31,7 +33,7 @@ function choques(p: PartidoVista, sede: string, cancha: string, fhIso: string | 
     if (o.id === p.id || !o.fecha_hora || o.estado === 'bye') continue
     const d = Math.abs(new Date(o.fecha_hora).getTime() - t) / 60000
     const quien = `${o.torneo_id === p.torneo_id ? '' : `${o.torneo} · `}${o.categoria} · ${etiquetaPartido(o)} (${horaDe(o.fecha_hora)})`
-    if (sede && o.sede_id === sede && cancha && numCancha(o.cancha) === numCancha(cancha) && d < Math.max(duracion(o), duracion(p))) {
+    if (cancha && o.cancha_id === cancha && d < Math.max(duracion(o), duracion(p))) {
       out.push(`Cancha ocupada: ${quien}`)
     }
     if (d < 90) {
@@ -54,20 +56,24 @@ export function FilaProgramacion({
 }) {
   const [sede, setSede] = useState(p.sede_id ?? '')
   const [fh, setFh] = useState(aInputLocal(p.fecha_hora))
-  const [cancha, setCancha] = useState(numCancha(p.cancha))
+  const [cancha, setCancha] = useState(p.cancha_id ?? '')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
-  const cambiado = sede !== (p.sede_id ?? '') || fh !== aInputLocal(p.fecha_hora) || cancha !== numCancha(p.cancha)
+  const cambiado = sede !== (p.sede_id ?? '') || fh !== aInputLocal(p.fecha_hora) || cancha !== (p.cancha_id ?? '')
   const s = sedes.find((x) => x.id === sede)
-  const opcionesCancha = Array.from({ length: s?.canchas ?? 0 }, (_, k) => String(k + 1))
-  if (cancha && !opcionesCancha.includes(cancha)) opcionesCancha.push(cancha)
-  const avisos = choques(p, sede, cancha, desdeInputLocal(fh), ocupados)
+  const opcionesCancha = canchasDe(s)
+  // si el partido tiene una cancha que después se desactivó, la seguimos mostrando
+  if (cancha && !opcionesCancha.some((c) => c.id === cancha)) {
+    const vieja = s?.canchas?.find((c) => c.id === cancha)
+    if (vieja) opcionesCancha.push(vieja)
+  }
+  const avisos = choques(p, cancha, desdeInputLocal(fh), ocupados)
 
   async function guardar() {
     setGuardando(true)
     setError('')
     const { error } = await supabase.from('partidos')
-      .update({ sede_id: sede || null, fecha_hora: desdeInputLocal(fh), cancha: cancha || null }).eq('id', p.id)
+      .update({ sede_id: sede || null, fecha_hora: desdeInputLocal(fh), cancha_id: cancha || null }).eq('id', p.id)
     setGuardando(false)
     if (error) return setError(mensajeError(error))
     onGuardado()
@@ -93,7 +99,7 @@ export function FilaProgramacion({
         <Input type="datetime-local" value={fh} onChange={(e) => setFh(e.target.value)} aria-label="Fecha y hora" />
         <Select value={cancha} onChange={(e) => setCancha(e.target.value)} aria-label="Cancha" disabled={!sede}>
           <option value="">Cancha</option>
-          {opcionesCancha.map((c) => <option key={c} value={c}>Cancha {c}</option>)}
+          {opcionesCancha.map((c) => <option key={c.id} value={c.id}>{c.nombre}{c.activa ? '' : ' (inactiva)'}</option>)}
         </Select>
         {avisos.length > 0 && (
           <ul className="space-y-0.5 text-xs text-amber-800 sm:col-span-3">
@@ -119,8 +125,8 @@ export function OcupacionCanchas({ ocupados, sedes, tcActual, dias }: { ocupados
   )
   const [dia, setDia] = useState(todosDias.find((d) => conHora.some((p) => diaDe(p.fecha_hora!) === d)) ?? todosDias[0] ?? '')
   const delDia = conHora.filter((p) => diaDe(p.fecha_hora!) === dia)
-  const columnas = sedes.flatMap((s) => Array.from({ length: s.canchas }, (_, k) => ({ sede: s, cancha: String(k + 1) })))
-  const sinCancha = delDia.filter((p) => !p.sede_id || !numCancha(p.cancha))
+  const columnas = sedes.flatMap((s) => canchasDe(s).map((c) => ({ sede: s, cancha: c })))
+  const sinCancha = delDia.filter((p) => !p.sede_id || !p.cancha_id)
   const horas = [...new Set(delDia.map((p) => horaDe(p.fecha_hora!)))].sort()
 
   return (
@@ -142,8 +148,8 @@ export function OcupacionCanchas({ ocupados, sedes, tcActual, dias }: { ocupados
               <tr>
                 <th className="w-14" />
                 {columnas.map((c) => (
-                  <th key={c.sede.id + c.cancha} className="min-w-[9rem] rounded-md bg-vidrio px-2 py-1.5 text-left font-semibold">
-                    {c.sede.nombre}<span className="block font-normal text-noche/55">Cancha {c.cancha}</span>
+                  <th key={c.cancha.id} className="min-w-[9rem] rounded-md bg-vidrio px-2 py-1.5 text-left font-semibold">
+                    {c.sede.nombre}<span className="block font-normal text-noche/55">{c.cancha.nombre}</span>
                   </th>
                 ))}
               </tr>
@@ -153,9 +159,9 @@ export function OcupacionCanchas({ ocupados, sedes, tcActual, dias }: { ocupados
                 <tr key={h}>
                   <td className="num pr-1 text-right align-top font-display text-sm font-semibold text-noche/60">{h}</td>
                   {columnas.map((c) => {
-                    const aca = delDia.filter((p) => horaDe(p.fecha_hora!) === h && p.sede_id === c.sede.id && numCancha(p.cancha) === c.cancha)
+                    const aca = delDia.filter((p) => horaDe(p.fecha_hora!) === h && p.cancha_id === c.cancha.id)
                     return (
-                      <td key={c.sede.id + c.cancha} className="align-top">
+                      <td key={c.cancha.id} className="align-top">
                         {aca.map((p) => (
                           <div key={p.id} className={`mb-1 rounded-md px-2 py-1 ${aca.length > 1 ? 'bg-amber-100 ring-1 ring-amber-400' : p.torneo_categoria_id === tcActual ? 'bg-cancha text-white' : 'bg-noche/5'}`}>
                             <p className="font-semibold">{p.categoria} · {etiquetaPartido(p)}</p>

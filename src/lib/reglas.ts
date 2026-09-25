@@ -18,9 +18,7 @@ export function toleranciaHasta(iso: string | null | undefined): string | null {
   return hhmm(new Date(new Date(iso).getTime() + TOLERANCIA_MIN * 60000))
 }
 
-/** '2', 'Cancha 2' → 'Cancha 2' */
+/** Nombre de la cancha tal como la cargó el admin (Blindex, Cancha 1…) */
 export function nombreCancha(c: string | null | undefined): string | null {
-  if (!c) return null
-  const n = c.replace(/^cancha\s*/i, '').trim()
-  return n ? `Cancha ${n}` : null
+  return c?.trim() || null
 }

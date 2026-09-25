@@ -24,6 +24,7 @@ drop table if exists public.torneos cascade;
 drop table if exists public.parejas cascade;
 drop table if exists public.jugador_categoria_historial cascade;
 drop table if exists public.jugadores cascade;
+drop table if exists public.canchas cascade;
 drop table if exists public.sedes cascade;
 drop table if exists public.categorias cascade;
 
@@ -118,14 +119,31 @@ create table public.sedes (
   id         uuid primary key default gen_random_uuid(),
   nombre     text not null unique,
   direccion  text,
-  canchas    smallint not null default 1 check (canchas between 1 and 20),
   activa     boolean not null default true,
   created_at timestamptz not null default now()
 );
-insert into public.sedes (nombre, direccion, canchas) values
-  ('El Clásico',   'Malaspina, Villa Ramallo', 3),
-  ('El Clásico 2', null,                       1),
-  ('Complejo PM',  'Av. Savio 450, Ramallo',   2);
+insert into public.sedes (nombre, direccion) values
+  ('El Clásico',   'Malaspina, Villa Ramallo'),
+  ('El Clásico 2', null),
+  ('Complejo PM',  'Av. Savio 450, Ramallo');
+
+-- Canchas de cada complejo (administrables: nombre, orden, activa)
+create table public.canchas (
+  id         uuid primary key default gen_random_uuid(),
+  sede_id    uuid not null references public.sedes(id) on delete cascade,
+  nombre     text not null check (length(trim(nombre)) > 0),
+  orden      smallint not null default 0,
+  activa     boolean not null default true,
+  created_at timestamptz not null default now(),
+  constraint canchas_nombre_unico unique (sede_id, nombre)
+);
+insert into public.canchas (sede_id, nombre, orden)
+select s.id, c.nombre, c.orden
+from public.sedes s
+join (values ('El Clásico', 'Blindex', 1), ('El Clásico', 'Cancha 1', 2), ('El Clásico', 'Cancha 2', 3),
+             ('El Clásico 2', 'Cancha 1', 1),
+             ('Complejo PM', 'Cancha 1', 1), ('Complejo PM', 'Cancha 2', 2)) c(sede, nombre, orden)
+  on c.sede = s.nombre;
 
 create table public.parejas (
   id           uuid primary key default gen_random_uuid(),
@@ -216,7 +234,7 @@ create table public.partidos (
   pareja_a_id           uuid references public.inscripciones(id),
   pareja_b_id           uuid references public.inscripciones(id),
   sede_id               uuid references public.sedes(id),
-  cancha                text,
+  cancha_id             uuid references public.canchas(id) on delete set null,
   fecha_hora            timestamptz,
   super_tiebreak        boolean not null default false,   -- zona: 3er set = super tiebreak a 11
   s1_a smallint, s1_b smallint,
@@ -624,6 +642,21 @@ create trigger t_torneos_proteger_formato
   before update of americano, games_set_unico on public.torneos
   for each row execute function public.torneos_proteger_formato();
 
+-- La cancha tiene que ser del complejo (sede) del partido
+create or replace function public.partidos_cancha_de_sede()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  if new.cancha_id is not null and
+     (select sede_id from public.canchas where id = new.cancha_id) is distinct from new.sede_id then
+    raise exception 'La cancha elegida no pertenece a ese complejo';
+  end if;
+  return new;
+end $$;
+
+create trigger t_partidos_cancha_de_sede
+  before insert or update of cancha_id, sede_id on public.partidos
+  for each row execute function public.partidos_cancha_de_sede();
+
 create or replace function public.set_unico_valido(a smallint, b smallint, p_games smallint)
 returns boolean language sql immutable as $$
   select a is not null and b is not null and a >= 0 and b >= 0
@@ -652,11 +685,11 @@ begin
       raise exception 'El partido ya tiene resultado cargado; solo el administrador puede editarlo';
     end if;
     if (new.torneo_categoria_id, new.fase, new.zona_id, new.ronda, new.orden, new.tipo_zona,
-        new.pareja_a_id, new.pareja_b_id, new.sede_id, new.cancha, new.fecha_hora,
+        new.pareja_a_id, new.pareja_b_id, new.sede_id, new.cancha_id, new.fecha_hora,
         new.super_tiebreak, new.siguiente_partido_id, new.siguiente_slot)
        is distinct from
        (old.torneo_categoria_id, old.fase, old.zona_id, old.ronda, old.orden, old.tipo_zona,
-        old.pareja_a_id, old.pareja_b_id, old.sede_id, old.cancha, old.fecha_hora,
+        old.pareja_a_id, old.pareja_b_id, old.sede_id, old.cancha_id, old.fecha_hora,
         old.super_tiebreak, old.siguiente_partido_id, old.siguiente_slot) then
       raise exception 'Como editor solo podés cargar el resultado del partido';
     end if;
@@ -1030,7 +1063,7 @@ begin
 
   -- guardar la programación actual por cruce (pareja_a, pareja_b) para no perderla
   select coalesce(jsonb_agg(jsonb_build_object('a', pareja_a_id, 'b', pareja_b_id, 'z', z.nombre, 'r', p.ronda, 'o', p.orden,
-                                               'sede', sede_id, 'cancha', cancha, 'fh', fecha_hora)), '[]')
+                                               'sede', sede_id, 'cancha', cancha_id, 'fh', fecha_hora)), '[]')
     into v_prog
   from public.partidos p join public.zonas z on z.id = p.zona_id
   where p.torneo_categoria_id = p_torneo_categoria and (p.sede_id is not null or p.fecha_hora is not null);
@@ -1048,7 +1081,7 @@ begin
   end loop;
 
   -- reponer sede/horario: mismo cruce de parejas, o mismo partido de zona de 4 (ronda 2) en la misma zona
-  update public.partidos p set sede_id = (g ->> 'sede')::uuid, cancha = g ->> 'cancha', fecha_hora = (g ->> 'fh')::timestamptz
+  update public.partidos p set sede_id = (g ->> 'sede')::uuid, cancha_id = (g ->> 'cancha')::uuid, fecha_hora = (g ->> 'fh')::timestamptz
   from jsonb_array_elements(v_prog) g, public.zonas z
   where p.torneo_categoria_id = p_torneo_categoria and z.id = p.zona_id
     and ((p.pareja_a_id is not null and least(p.pareja_a_id, p.pareja_b_id) = least((g ->> 'a')::uuid, (g ->> 'b')::uuid)
@@ -1272,7 +1305,7 @@ where tc.estado <> 'inscripcion'
 
 create view public.v_partidos as
 select p.*, tc.torneo_id, tc.categoria_id, c.nombre as categoria, t.nombre as torneo,
-       z.nombre as zona, s.nombre as sede,
+       z.nombre as zona, s.nombre as sede, ca.nombre as cancha,
        pa.nombre_corto as pareja_a, pa.jugador1 as pareja_a_j1, pa.jugador2 as pareja_a_j2,
        pb.nombre_corto as pareja_b, pb.jugador1 as pareja_b_j1, pb.jugador2 as pareja_b_j2,
        pa.jugador1_id as pareja_a_j1_id, pa.jugador2_id as pareja_a_j2_id,
@@ -1283,6 +1316,7 @@ join public.torneo_categorias tc on tc.id = p.torneo_categoria_id
 join public.categorias c on c.id = tc.categoria_id
 join public.torneos t on t.id = tc.torneo_id
 left join public.zonas z on z.id = p.zona_id
+left join public.canchas ca on ca.id = p.cancha_id
 left join public.sedes s on s.id = p.sede_id
 left join (select i.id, vp.* from public.inscripciones i join public.v_parejas vp on vp.id = i.pareja_id) pa(ins_id) on pa.ins_id = p.pareja_a_id
 left join (select i.id, vp.* from public.inscripciones i join public.v_parejas vp on vp.id = i.pareja_id) pb(ins_id) on pb.ins_id = p.pareja_b_id;
@@ -1382,12 +1416,86 @@ returns void language sql volatile security definer set search_path = public as 
 $$;
 
 -- ---------------------------------------------------------------------
+-- 12c. Estadísticas: participaciones e instancia máxima alcanzada
+-- ---------------------------------------------------------------------
+-- Una fila por jugador e inscripción en categorías ya armadas (zonas, playoff o finalizada).
+-- instancia_orden: 1 campeón · 2 subcampeón · 3 final (por jugarse) · 4 semifinal · 5 cuartos
+--                  6 octavos · 7 dieciseisavos · 8 zona.  en_curso = la categoría no terminó.
+-- Un jugador solo puede pedir las suyas; con p_jugador null (todos) hace falta ser admin.
+create or replace function public.participaciones(p_jugador uuid default null)
+returns table (
+  jugador_id uuid, dni text, nombre text, apellido text, companero text,
+  pareja_id uuid, inscripcion_id uuid, torneo_id uuid, torneo text, fecha_desde date, americano boolean,
+  categoria_id smallint, categoria text, categoria_orden smallint,
+  instancia text, instancia_orden int, en_curso boolean
+) language plpgsql stable security definer set search_path = public as $$
+#variable_conflict use_column
+begin
+  if p_jugador is distinct from auth.uid() and not public.es_sistema_o_admin() then
+    raise exception 'Solo el administrador puede ver las estadísticas de otros jugadores';
+  end if;
+
+  return query
+  with ins as (
+    select i.id as ins_id, tc.id as tc_id, tc.estado as tc_estado, t.id as t_id, t.nombre as t_nombre,
+           t.fecha_desde as t_desde, t.americano as t_amer, c.id as c_id, c.nombre as c_nombre, c.orden as c_orden,
+           p.id as par_id, p.jugador1_id as j1, p.jugador2_id as j2
+    from public.inscripciones i
+    join public.torneo_categorias tc on tc.id = i.torneo_categoria_id
+    join public.torneos t on t.id = tc.torneo_id
+    join public.categorias c on c.id = tc.categoria_id
+    join public.parejas p on p.id = i.pareja_id
+    where i.estado = 'activa' and tc.estado in ('zonas', 'playoff', 'finalizada') and t.estado <> 'cancelado'
+      and (p_jugador is null or p_jugador in (p.jugador1_id, p.jugador2_id))
+  ),
+  inst as (
+    select ins.*,
+      (select case when f.estado in ('finalizado', 'wo') and f.ganador_id = ins.ins_id then 1
+                   when f.estado in ('finalizado', 'wo') then 2 else 3 end
+       from public.partidos f
+       where f.torneo_categoria_id = ins.tc_id and f.fase = 'final' and ins.ins_id in (f.pareja_a_id, f.pareja_b_id)
+       limit 1) as fin,
+      (select min(array_position(array['semifinal', 'cuartos', 'octavos', 'dieciseisavos']::public.fase_partido[], x.fase))
+       from public.partidos x
+       where x.torneo_categoria_id = ins.tc_id and x.fase in ('semifinal', 'cuartos', 'octavos', 'dieciseisavos')
+         and ins.ins_id in (x.pareja_a_id, x.pareja_b_id)) as po
+    from ins
+  )
+  select j.id, j.dni, j.nombre, j.apellido, o.nombre || ' ' || o.apellido,
+         inst.par_id, inst.ins_id, inst.t_id, inst.t_nombre, inst.t_desde, inst.t_amer,
+         inst.c_id, inst.c_nombre, inst.c_orden,
+         case coalesce(inst.fin, inst.po + 3, 8)
+           when 1 then 'campeon' when 2 then 'subcampeon' when 3 then 'final' when 4 then 'semifinal'
+           when 5 then 'cuartos' when 6 then 'octavos' when 7 then 'dieciseisavos' else 'zona' end,
+         coalesce(inst.fin, inst.po + 3, 8),
+         inst.tc_estado <> 'finalizada'
+  from inst
+  join public.jugadores j on j.id in (inst.j1, inst.j2)
+  join public.jugadores o on o.id in (inst.j1, inst.j2) and o.id <> j.id
+  where p_jugador is null or j.id = p_jugador;
+end $$;
+
+-- Totales para el tablero del administrador
+create or replace function public.admin_kpis()
+returns table (jugadores int, jugadores_activos int, parejas int, parejas_activas int, torneos int, torneos_finalizados int)
+language sql stable security definer set search_path = public as $$
+  select (select count(*)::int from public.jugadores),
+         (select count(*)::int from public.jugadores where activo),
+         (select count(*)::int from public.parejas),
+         (select count(*)::int from public.parejas where activa),
+         (select count(*)::int from public.torneos where estado <> 'borrador'),
+         (select count(*)::int from public.torneos where estado = 'finalizado')
+  where public.es_sistema_o_admin()
+$$;
+
+-- ---------------------------------------------------------------------
 -- 13. Row Level Security
 -- ---------------------------------------------------------------------
 alter table public.categorias                  enable row level security;
 alter table public.jugadores                   enable row level security;
 alter table public.jugador_categoria_historial enable row level security;
 alter table public.sedes                       enable row level security;
+alter table public.canchas                     enable row level security;
 alter table public.parejas                     enable row level security;
 alter table public.torneos                     enable row level security;
 alter table public.torneo_categorias           enable row level security;
@@ -1414,6 +1522,8 @@ create policy historial_select on public.jugador_categoria_historial for select 
 -- sedes
 create policy sedes_select on public.sedes for select to authenticated using (true);
 create policy sedes_admin  on public.sedes for all to authenticated using (public.es_admin()) with check (public.es_admin());
+create policy canchas_select on public.canchas for select to authenticated using (true);
+create policy canchas_admin  on public.canchas for all to authenticated using (public.es_admin()) with check (public.es_admin());
 
 -- parejas (el alta es solo por la función crear_pareja)
 create policy parejas_select on public.parejas for select to authenticated

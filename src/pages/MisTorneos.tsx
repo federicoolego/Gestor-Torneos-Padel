@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import type { MiInscripcion, PartidoVista } from '../lib/types'
 import { ESTADO_CATEGORIA_LABEL, rangoFechas } from '../lib/formato'
-import { Badge, Spinner, Titulo, Vacio } from '../components/ui'
+import { Badge, Spinner, Tabs, Titulo, Vacio } from '../components/ui'
+import Rendimiento from '../components/estadisticas/Rendimiento'
 import { ReglasTorneo } from '../components/Reglas'
 import { PartidoFila } from '../components/Partidos'
 
@@ -13,6 +14,7 @@ export default function MisTorneos() {
   const [ins, setIns] = useState<MiInscripcion[] | null>(null)
   const [partidos, setPartidos] = useState<PartidoVista[]>([])
   const [n, setN] = useState(0)
+  const [tab, setTab] = useState<'partidos' | 'rendimiento'>('partidos')
 
   useEffect(() => {
     ;(async () => {
@@ -38,8 +40,17 @@ export default function MisTorneos() {
 
   return (
     <>
-      <Titulo bajada="Tus próximos partidos, con sede y horario, y el historial de resultados.">Mis Torneos</Titulo>
-      {ins.length === 0 ? (
+      <Titulo bajada="Tus próximos partidos, con sede y horario, el historial de resultados y cómo te fue en cada torneo.">Mis Torneos</Titulo>
+      <div className="mb-6">
+        <Tabs<'partidos' | 'rendimiento'>
+          valor={tab}
+          onChange={setTab}
+          opciones={[{ id: 'partidos', label: 'Partidos' }, { id: 'rendimiento', label: 'Rendimiento' }]}
+        />
+      </div>
+      {tab === 'rendimiento' && jugador ? (
+        <Rendimiento jugadorId={jugador.id} />
+      ) : ins.length === 0 ? (
         <Vacio titulo="No estás jugando ningún torneo" accion={<Link to="/torneos" className="font-semibold text-cancha underline">Ver torneos</Link>} />
       ) : (
         <div className="space-y-10">

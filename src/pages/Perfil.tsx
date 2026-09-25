@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase, mensajeError } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Alerta, Badge, Button, Card, Field, Input, Titulo } from '../components/ui'
@@ -95,8 +96,23 @@ export default function Perfil() {
               <Button type="submit" variante="secundario">Cambiar contraseña</Button>
             </form>
           </Card>
+          {jugador?.rol === 'administrador' && (
+            <Card>
+              <h2 className="font-display text-xl font-bold">Administración</h2>
+              <nav className="mt-2 flex flex-col gap-1 text-sm font-semibold text-cancha" aria-label="Administración">
+                <Link to="/admin/torneos" className="py-1">Armado de torneos</Link>
+                <Link to="/admin/estadisticas" className="py-1">Estadísticas</Link>
+                <Link to="/admin/jugadores" className="py-1">Jugadores</Link>
+                <Link to="/admin/categorias" className="py-1">Categorías</Link>
+                <Link to="/admin/sedes" className="py-1">Sedes y canchas</Link>
+              </nav>
+            </Card>
+          )}
         </div>
       </div>
+      <p className="mt-8 text-center text-[11px] text-noche/40">
+        Versión {(import.meta.env.VITE_APP_VERSION ?? 'local').slice(0, 7)} · rol {jugador ? ROL_LABEL[jugador.rol] : '—'}
+      </p>
     </>
   )
 }
