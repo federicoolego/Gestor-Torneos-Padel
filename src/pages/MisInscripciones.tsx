@@ -23,7 +23,7 @@ export default function MisInscripciones() {
   return (
     <>
       <Titulo
-        bajada="Hasta el cierre de inscripción podés cambiar los problemas de horario o cancelar. Después, la inscripción se cobra aunque no se presenten."
+        bajada="Hasta el cierre de inscripción podés cambiar los problemas de horario o cancelar."
         accion={items.some((i) => i.estado === 'cancelada') && (
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={verCanceladas} onChange={(e) => setVerCanceladas(e.target.checked)} /> Mostrar canceladas</label>
         )}
