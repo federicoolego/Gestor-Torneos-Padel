@@ -13,6 +13,8 @@ export default function AdminJugadores() {
   const catsNivel = categorias.filter((c) => c.tipo === 'nivel')
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('')
+  const [rol, setRol] = useState('')
+  const [estado, setEstado] = useState('')
   const [lista, setLista] = useState<Jugador[] | null>(null)
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; txt: string } | null>(null)
   const [afectadas, setAfectadas] = useState<{ j: Jugador; lista: NoElegible[] } | null>(null)
@@ -23,9 +25,13 @@ export default function AdminJugadores() {
     const t = q.trim()
     if (t) query = /^\d+$/.test(t) ? query.like('dni', `${t}%`) : query.or(`apellido.ilike.%${t}%,nombre.ilike.%${t}%`)
     if (cat) query = query.eq('categoria_id', Number(cat))
+    if (rol) query = query.eq('rol', rol)
+    if (estado === 'activo') query = query.eq('activo', true)
+    if (estado === 'inactivo') query = query.eq('activo', false)
+    if (estado === 'clave') query = query.eq('debe_cambiar_password', true)
     const { data } = await query
     setLista((data as Jugador[]) ?? [])
-  }, [q, cat])
+  }, [q, cat, rol, estado])
 
   useEffect(() => {
     const h = setTimeout(buscar, 250)
@@ -84,15 +90,36 @@ export default function AdminJugadores() {
   return (
     <>
       <Titulo bajada="Recategorizá jugadores (ascensos o ajustes) y asigná roles. Cada cambio de categoría queda en el historial del jugador.">Jugadores</Titulo>
-      <div className="mb-4 flex flex-wrap gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[16rem] flex-1">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-noche/40" aria-hidden />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por apellido, nombre o DNI" className="pl-9" aria-label="Buscar jugador" />
         </div>
-        <Select value={cat} onChange={(e) => setCat(e.target.value)} className="w-48" aria-label="Filtrar por categoría">
-          <option value="">Todas las categorías</option>
-          {catsNivel.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </Select>
+        <div className="w-full sm:w-48">
+          <Select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Filtrar por categoría">
+            <option value="">Todas las categorías</option>
+            {catsNivel.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </Select>
+        </div>
+        <div className="w-[calc(50%-0.375rem)] sm:w-40">
+          <Select value={rol} onChange={(e) => setRol(e.target.value)} aria-label="Filtrar por rol">
+            <option value="">Todos los roles</option>
+            {(Object.keys(ROL_LABEL) as (keyof typeof ROL_LABEL)[]).map((r) => <option key={r} value={r}>{ROL_LABEL[r]}</option>)}
+          </Select>
+        </div>
+        <div className="w-[calc(50%-0.375rem)] sm:w-48">
+          <Select value={estado} onChange={(e) => setEstado(e.target.value)} aria-label="Filtrar por estado">
+            <option value="">Todos los estados</option>
+            <option value="activo">Activos</option>
+            <option value="inactivo">Inactivos</option>
+            <option value="clave">Con clave temporal pendiente</option>
+          </Select>
+        </div>
+        {(cat || rol || estado || q) && (
+          <button onClick={() => { setQ(''); setCat(''); setRol(''); setEstado('') }} className="text-sm font-semibold text-cancha hover:underline">
+            Limpiar filtros
+          </button>
+        )}
       </div>
       {msg && <div className="mb-4"><Alerta tipo={msg.tipo}>{msg.txt}</Alerta></div>}
       {!lista ? <Spinner /> : lista.length === 0 ? <Vacio titulo="Sin resultados" /> : (
