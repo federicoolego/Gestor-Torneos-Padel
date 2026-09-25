@@ -19,14 +19,16 @@ import AdminJugadores from './pages/admin/AdminJugadores'
 import AdminSedes from './pages/admin/AdminSedes'
 import AdminCategorias from './pages/admin/AdminCategorias'
 import AdminEstadisticas from './pages/admin/AdminEstadisticas'
+import Calendario from './pages/Calendario'
 
-function Privada({ children, soloAdmin }: { children: ReactNode; soloAdmin?: boolean }) {
-  const { session, jugador, cargando, esAdmin } = useAuth()
+function Privada({ children, soloAdmin, soloEditor }: { children: ReactNode; soloAdmin?: boolean; soloEditor?: boolean }) {
+  const { session, jugador, cargando, esAdmin, esEditor } = useAuth()
   if (cargando) return <div className="px-6"><Spinner /></div>
   if (!session) return <Navigate to="/login" replace />
   if (!jugador) return <SinPerfil />
   if (jugador.debe_cambiar_password) return <CambiarPassword />
   if (soloAdmin && !esAdmin) return <Navigate to="/torneos" replace />
+  if (soloEditor && !esEditor) return <Navigate to="/torneos" replace />
   return <>{children}</>
 }
 
@@ -57,6 +59,7 @@ export default function App() {
         <Route path="/mis-inscripciones" element={<MisInscripciones />} />
         <Route path="/mis-parejas" element={<MisParejas />} />
         <Route path="/mis-torneos" element={<MisTorneos />} />
+        <Route path="/calendario" element={<Privada soloEditor><Calendario /></Privada>} />
         <Route path="/admin/torneos" element={<Privada soloAdmin><AdminTorneos /></Privada>} />
         <Route path="/admin/torneos/nuevo" element={<Privada soloAdmin><TorneoForm /></Privada>} />
         <Route path="/admin/torneos/:id" element={<Privada soloAdmin><TorneoForm /></Privada>} />

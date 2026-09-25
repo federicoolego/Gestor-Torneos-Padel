@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X, BarChart3 } from 'lucide-react'
+import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X, BarChart3, CalendarRange } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { ROL_LABEL } from '../lib/formato'
 
@@ -11,6 +11,9 @@ const MENU = [
   { to: '/mis-torneos', label: 'Mis Torneos', icono: CalendarDays },
   { to: '/perfil', label: 'Perfil', icono: UserRound },
 ]
+
+/** Editor y administrador */
+const CALENDARIO = { to: '/calendario', label: 'Calendario de partidos', icono: CalendarRange }
 
 const ADMIN = [
   { to: '/admin/torneos', label: 'Armado de torneos', icono: Settings2 },
@@ -37,7 +40,7 @@ function Enlace({ to, label, icono: Icono }: (typeof MENU)[number]) {
 }
 
 export default function Layout() {
-  const { jugador, esAdmin, salir, categorias } = useAuth()
+  const { jugador, esAdmin, esEditor, salir, categorias } = useAuth()
   const cat = categorias.find((c) => c.id === jugador?.categoria_id)
   const [adminAbierto, setAdminAbierto] = useState(false)
   const { pathname } = useLocation()
@@ -52,10 +55,11 @@ export default function Layout() {
         <nav className="mt-8 flex flex-col gap-1" aria-label="Principal">
           {MENU.map((m) => <Enlace key={m.to} {...m} />)}
         </nav>
-        {esAdmin && (
+        {esEditor && (
           <nav className="mt-8 flex flex-col gap-1" aria-label="Administración">
-            <p className="px-3 pb-1 text-xs font-medium text-white/40">Administración</p>
-            {ADMIN.map((m) => <Enlace key={m.to} {...m} />)}
+            <p className="px-3 pb-1 text-xs font-medium text-white/40">{esAdmin ? 'Administración' : 'Resultados'}</p>
+            <Enlace {...CALENDARIO} />
+            {esAdmin && ADMIN.map((m) => <Enlace key={m.to} {...m} />)}
           </nav>
         )}
         <div className="mt-auto border-t border-white/10 pt-4">
@@ -87,7 +91,7 @@ export default function Layout() {
       {/* Tab bar móvil */}
       <nav
         aria-label="Principal"
-        className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-noche/10 bg-white lg:hidden ${esAdmin ? 'grid-cols-6' : 'grid-cols-5'}`}
+        className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-noche/10 bg-white lg:hidden ${esEditor ? 'grid-cols-6' : 'grid-cols-5'}`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         {MENU.map(({ to, label, icono: Icono }) => (
@@ -102,11 +106,20 @@ export default function Layout() {
             <span className="text-center">{label.replace('Mis ', '')}</span>
           </NavLink>
         ))}
+        {esEditor && !esAdmin && (
+          <NavLink
+            to="/calendario"
+            className={({ isActive }) => `flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium leading-tight ${isActive ? 'text-cancha' : 'text-noche/55'}`}
+          >
+            <CalendarRange className="h-5 w-5" aria-hidden />
+            <span>Calendario</span>
+          </NavLink>
+        )}
         {esAdmin && (
           <button
             onClick={() => setAdminAbierto(true)}
             aria-haspopup="dialog"
-            className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium leading-tight ${enAdmin ? 'text-cancha' : 'text-noche/55'}`}
+            className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium leading-tight ${enAdmin || pathname === '/calendario' ? 'text-cancha' : 'text-noche/55'}`}
           >
             <ShieldCheck className="h-5 w-5" aria-hidden />
             <span>Admin</span>
@@ -130,6 +143,7 @@ export default function Layout() {
               <button onClick={() => setAdminAbierto(false)} aria-label="Cerrar" className="text-white/70"><X className="h-5 w-5" /></button>
             </div>
             <nav className="flex flex-col gap-1" aria-label="Administración">
+              <Enlace {...CALENDARIO} />
               {ADMIN.map((m) => <Enlace key={m.to} {...m} />)}
             </nav>
           </div>

@@ -100,6 +100,7 @@ export default function Perfil() {
             <Card>
               <h2 className="font-display text-xl font-bold">Administración</h2>
               <nav className="mt-2 flex flex-col gap-1 text-sm font-semibold text-cancha" aria-label="Administración">
+                <Link to="/calendario" className="py-1">Calendario de partidos</Link>
                 <Link to="/admin/torneos" className="py-1">Armado de torneos</Link>
                 <Link to="/admin/estadisticas" className="py-1">Estadísticas</Link>
                 <Link to="/admin/jugadores" className="py-1">Jugadores</Link>
