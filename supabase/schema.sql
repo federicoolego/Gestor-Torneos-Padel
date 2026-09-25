@@ -538,7 +538,11 @@ begin
       end if;
     end if;
 
-    if v_tc.estado <> 'inscripcion' then
+    -- El admin puede sumar parejas hasta que se cargue el primer resultado, aunque ya haya zonas
+    -- (la pareja queda "sin zona" y hay que ubicarla desde el armado de zonas).
+    if v_tc.estado <> 'inscripcion' and not (
+         v_admin and v_tc.estado = 'zonas' and not exists (
+           select 1 from public.partidos where torneo_categoria_id = v_tc.id and estado in ('finalizado', 'wo'))) then
       raise exception 'Esta categoría ya no acepta inscripciones';
     end if;
     if not v_p.activa then
@@ -599,7 +603,17 @@ begin
 
   if new.estado = 'cancelada' and old.estado = 'activa' then
     if exists (select 1 from public.zona_parejas where inscripcion_id = new.id) then
-      raise exception 'La pareja ya fue asignada a una zona; primero hay que regenerar las zonas';
+      -- El admin puede dar de baja una pareja ya ubicada mientras no haya resultados:
+      -- su zona queda incompleta (sin partidos) hasta que se rearme desde el armado de zonas.
+      if v_admin and not exists (select 1 from public.partidos
+                                 where torneo_categoria_id = v_tc.id and estado in ('finalizado', 'wo')) then
+        perform set_config('app.interno', 'on', true);
+        delete from public.partidos where zona_id in (select zona_id from public.zona_parejas where inscripcion_id = new.id);
+        delete from public.zona_parejas where inscripcion_id = new.id;
+        perform set_config('app.interno', 'off', true);
+      else
+        raise exception 'La pareja ya juega en una zona con resultados cargados: no se puede cancelar';
+      end if;
     end if;
     new.cancelada_at := now();
   end if;
@@ -1163,6 +1177,17 @@ begin
              where torneo_categoria_id = p_torneo_categoria and fase = 'zona' and estado = 'pendiente') then
     raise exception 'Faltan resultados de zona: completalos antes de armar el playoff';
   end if;
+  if exists (select 1 from public.inscripciones i
+             where i.torneo_categoria_id = p_torneo_categoria and i.estado = 'activa'
+               and not exists (select 1 from public.zona_parejas zp where zp.inscripcion_id = i.id)) then
+    raise exception 'Hay parejas inscriptas sin zona: ubicalas en el armado de zonas antes de generar el playoff';
+  end if;
+  if exists (select 1 from public.zonas z
+             where z.torneo_categoria_id = p_torneo_categoria
+               and ((select count(*) from public.zona_parejas zp where zp.zona_id = z.id) not between 3 and 4
+                    or not exists (select 1 from public.partidos x where x.zona_id = z.id))) then
+    raise exception 'Hay zonas incompletas (por una baja): rearmalas antes de generar el playoff';
+  end if;
   if exists (select 1 from public.partidos
              where torneo_categoria_id = p_torneo_categoria and fase <> 'zona' and estado in ('finalizado', 'wo')) then
     raise exception 'El playoff ya tiene resultados cargados: no se puede regenerar';
@@ -1413,6 +1438,60 @@ end $$;
 create or replace function public.marcar_password_cambiada()
 returns void language sql volatile security definer set search_path = public as $$
   update public.jugadores set debe_cambiar_password = false where id = auth.uid()
+$$;
+
+-- ---------------------------------------------------------------------
+-- 12d. Inscripción por el administrador y control al recategorizar
+-- ---------------------------------------------------------------------
+-- Inscribe (y si hace falta crea/reactiva) la pareja de los dos DNI. Vale aunque haya cerrado la
+-- inscripción, hasta que la categoría tenga el primer resultado. Devuelve el id de la inscripción.
+create or replace function public.admin_inscribir(
+  p_torneo_categoria uuid, p_dni1 text, p_dni2 text, p_horario text, p_pagada boolean default false
+) returns uuid language plpgsql volatile security definer set search_path = public as $$
+declare
+  a uuid; b uuid; v_par uuid; v_ins uuid;
+begin
+  if not public.es_sistema_o_admin() then raise exception 'Solo el administrador puede inscribir parejas de otros jugadores'; end if;
+  select id into a from public.jugadores where dni = trim(p_dni1) and activo;
+  select id into b from public.jugadores where dni = trim(p_dni2) and activo;
+  if a is null then raise exception 'No hay un jugador activo con DNI %', trim(p_dni1); end if;
+  if b is null then raise exception 'No hay un jugador activo con DNI %', trim(p_dni2); end if;
+  if a = b then raise exception 'Los dos DNI son del mismo jugador'; end if;
+
+  select id into v_par from public.parejas where jugador1_id = least(a, b) and jugador2_id = greatest(a, b);
+  if v_par is null then
+    insert into public.parejas (jugador1_id, jugador2_id, creada_por)
+    values (least(a, b), greatest(a, b), auth.uid()) returning id into v_par;
+  else
+    update public.parejas set activa = true where id = v_par and not activa;
+  end if;
+
+  insert into public.inscripciones (torneo_categoria_id, pareja_id, problemas_horario, pagada, inscripta_por)
+  values (p_torneo_categoria, v_par, coalesce(nullif(trim(p_horario), ''), 'Ninguno'), coalesce(p_pagada, false), auth.uid())
+  returning id into v_ins;
+  return v_ins;
+end $$;
+
+-- Inscripciones activas del jugador, todavía sin resultados, en categorías en las que su pareja
+-- ya no puede jugar (por ejemplo, después de ascenderlo). Solo admin.
+create or replace function public.inscripciones_no_elegibles(p_jugador uuid)
+returns table (inscripcion_id uuid, torneo text, categoria text, pareja text, en_zona boolean)
+language sql stable security definer set search_path = public as $$
+  select i.id, t.nombre, c.nombre, vp.nombre_corto,
+         exists (select 1 from public.zona_parejas zp where zp.inscripcion_id = i.id)
+  from public.inscripciones i
+  join public.parejas p on p.id = i.pareja_id
+  join public.v_parejas vp on vp.id = p.id
+  join public.torneo_categorias tc on tc.id = i.torneo_categoria_id
+  join public.torneos t on t.id = tc.torneo_id
+  join public.categorias c on c.id = tc.categoria_id
+  where public.es_sistema_o_admin()
+    and p_jugador in (p.jugador1_id, p.jugador2_id)
+    and i.estado = 'activa'
+    and tc.estado in ('inscripcion', 'zonas')
+    and not exists (select 1 from public.partidos x where x.torneo_categoria_id = tc.id and x.estado in ('finalizado', 'wo'))
+    and not public.pareja_puede_jugar(p.id, tc.categoria_id)
+  order by t.fecha_desde
 $$;
 
 -- ---------------------------------------------------------------------

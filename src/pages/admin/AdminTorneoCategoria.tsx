@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Phone, Trophy } from 'lucide-react'
+import { ArrowLeft, Phone, Trophy, UserPlus } from 'lucide-react'
 import { supabase, mensajeError } from '../../lib/supabase'
 import type { InscriptoAdmin, PartidoVista, Sede, Torneo, TorneoCategoriaVista, Zona } from '../../lib/types'
 import { ESTADO_CATEGORIA_LABEL, fechaHora } from '../../lib/formato'
@@ -8,6 +8,7 @@ import { Alerta, Badge, Button, Card, Spinner, Tabs, Titulo, Vacio } from '../..
 import { ZonaTabla } from '../../components/Zonas'
 import ArmadoZonas, { Horario } from '../../components/admin/ArmadoZonas'
 import Programacion from '../../components/admin/Programacion'
+import InscribirPareja from '../../components/admin/InscribirPareja'
 import Bracket from '../../components/Bracket'
 import ResultadoModal from '../../components/ResultadoModal'
 
@@ -26,6 +27,7 @@ export default function AdminTorneoCategoria() {
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; txt: string } | null>(null)
   const [trabajando, setTrabajando] = useState(false)
   const [elegido, setElegido] = useState<PartidoVista | null>(null)
+  const [inscribir, setInscribir] = useState(false)
 
   const cargar = useCallback(async () => {
     const [t, c, i, z, p, s] = await Promise.all([
@@ -85,6 +87,10 @@ export default function AdminTorneoCategoria() {
   const zonaPartidos = partidos.filter((p) => p.fase === 'zona')
   const playoff = partidos.filter((p) => p.fase !== 'zona')
   const pendientesZona = zonaPartidos.filter((p) => p.estado === 'pendiente').length
+  const hayResultados = partidos.some((p) => p.estado === 'finalizado' || p.estado === 'wo')
+  const puedeInscribir = tc.estado === 'inscripcion' || (tc.estado === 'zonas' && !hayResultados)
+  const enZona = new Set(zonas.flatMap((z) => z.zona_parejas.map((zp) => zp.inscripcion_id)))
+  const sinZona = zonas.length > 0 ? activos.filter((i) => !enZona.has(i.id)).length : 0
 
   return (
     <>
@@ -116,9 +122,14 @@ export default function AdminTorneoCategoria() {
             tc={tc}
             trabajando={trabajando}
             onPagada={(i) => ejecutar(() => supabase.from('inscripciones').update({ pagada: !i.pagada }).eq('id', i.id), i.pagada ? 'Pago desmarcado' : 'Pago registrado')}
-            onCancelar={(i) => confirm(`¿Cancelar la inscripción de ${i.jugador1} y ${i.jugador2}?`) && ejecutar(() => supabase.from('inscripciones').update({ estado: 'cancelada' }).eq('id', i.id), 'Inscripción cancelada')}
+            onCancelar={(i) => confirm(i.zona
+              ? `¿Dar de baja a ${i.jugador1} y ${i.jugador2}? Ya están en la zona ${i.zona}: se borran los partidos de esa zona y vas a tener que rearmarla en la pestaña Zonas.`
+              : `¿Cancelar la inscripción de ${i.jugador1} y ${i.jugador2}?`) && ejecutar(() => supabase.from('inscripciones').update({ estado: 'cancelada' }).eq('id', i.id), 'Inscripción cancelada')}
             onSuspender={() => confirm('¿Suspender la categoría por falta de parejas?') && ejecutar(() => supabase.from('torneo_categorias').update({ estado: 'suspendida' }).eq('id', tc.id), 'Categoría suspendida')}
             onReabrir={() => ejecutar(() => supabase.from('torneo_categorias').update({ estado: 'inscripcion' }).eq('id', tc.id), 'Categoría reabierta')}
+            onInscribir={puedeInscribir ? () => setInscribir(true) : undefined}
+            sinZona={sinZona}
+            hayResultados={hayResultados}
           />
         )}
 
@@ -167,8 +178,9 @@ export default function AdminTorneoCategoria() {
                 <p className="font-display text-xl font-semibold text-noche">Cuadro de playoff</p>
                 Clasifican 1° y 2° de zonas de 3, y 1°, 2° y 3° de zonas de 4. Primero van los 1° de zona, después los 2° y los 3°; si faltan parejas para completar el cuadro, los mejores pasan directo.
                 {pendientesZona > 0 && <p className="mt-2 text-amber-800">Faltan {pendientesZona} resultados de zona.</p>}
+                {sinZona > 0 && <p className="mt-2 text-amber-800">Hay {sinZona} pareja(s) inscriptas sin zona: ubicalas en la pestaña Zonas.</p>}
               </div>
-              <Button onClick={() => (playoff.length === 0 || confirm('Se va a regenerar el cuadro. ¿Continuar?')) && ejecutar(() => supabase.rpc('generar_playoff', { p_torneo_categoria: tc.id }), 'Cuadro generado')} disabled={pendientesZona > 0 || zonas.length === 0} cargando={trabajando}>
+              <Button onClick={() => (playoff.length === 0 || confirm('Se va a regenerar el cuadro. ¿Continuar?')) && ejecutar(() => supabase.rpc('generar_playoff', { p_torneo_categoria: tc.id }), 'Cuadro generado')} disabled={pendientesZona > 0 || zonas.length === 0 || sinZona > 0} cargando={trabajando}>
                 <Trophy className="h-4 w-4" aria-hidden /> {playoff.length ? 'Regenerar cuadro' : 'Generar cuadro'}
               </Button>
             </Card>
@@ -177,13 +189,22 @@ export default function AdminTorneoCategoria() {
         )}
       </div>
 
+      {inscribir && (
+        <InscribirPareja
+          tcId={tc.id}
+          categoria={tc.categoria}
+          conZonas={zonas.length > 0}
+          onCerrar={() => setInscribir(false)}
+          onHecho={(txt) => { setInscribir(false); setMsg({ tipo: 'ok', txt }); cargar() }}
+        />
+      )}
       {elegido && <ResultadoModal partido={elegido} esAdmin onCerrar={() => setElegido(null)} onGuardado={() => { setElegido(null); cargar() }} />}
     </>
   )
 }
 
 function Inscriptos({
-  lista, tc, trabajando, onPagada, onCancelar, onSuspender, onReabrir,
+  lista, tc, trabajando, onPagada, onCancelar, onSuspender, onReabrir, onInscribir, sinZona, hayResultados,
 }: {
   lista: InscriptoAdmin[]
   tc: TorneoCategoriaVista
@@ -192,10 +213,20 @@ function Inscriptos({
   onCancelar: (i: InscriptoAdmin) => void
   onSuspender: () => void
   onReabrir: () => void
+  onInscribir?: () => void
+  sinZona: number
+  hayResultados: boolean
 }) {
   const activos = lista.filter((i) => i.estado === 'activa')
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-noche/70"><span className="num font-semibold text-noche">{activos.length}</span> de {tc.cupo_max} parejas activas</p>
+        {onInscribir && (
+          <Button onClick={onInscribir} disabled={activos.length >= tc.cupo_max}><UserPlus className="h-4 w-4" aria-hidden /> Inscribir pareja</Button>
+        )}
+      </div>
+      {sinZona > 0 && <Alerta tipo="aviso">Hay {sinZona} pareja(s) inscriptas sin zona. Ubicalas en la pestaña Zonas y guardá.</Alerta>}
       {tc.estado === 'inscripcion' && activos.length < tc.cupo_min && (
         <Alerta tipo="aviso">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -240,7 +271,7 @@ function Inscriptos({
                     </label>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {i.estado === 'activa' && !i.zona && <Button variante="fantasma" onClick={() => onCancelar(i)} disabled={trabajando}>Cancelar</Button>}
+                    {i.estado === 'activa' && !hayResultados && <Button variante="fantasma" onClick={() => onCancelar(i)} disabled={trabajando}>{i.zona ? 'Dar de baja' : 'Cancelar'}</Button>}
                   </td>
                 </tr>
               ))}

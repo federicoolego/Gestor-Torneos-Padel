@@ -6,6 +6,8 @@ import type { Jugador, Rol } from '../../lib/types'
 import { ROL_LABEL } from '../../lib/formato'
 import { Alerta, Button, Input, Modal, Select, Spinner, Titulo, Vacio } from '../../components/ui'
 
+interface NoElegible { inscripcion_id: string; torneo: string; categoria: string; pareja: string; en_zona: boolean }
+
 export default function AdminJugadores() {
   const { categorias, jugador: yo } = useAuth()
   const catsNivel = categorias.filter((c) => c.tipo === 'nivel')
@@ -13,6 +15,7 @@ export default function AdminJugadores() {
   const [cat, setCat] = useState('')
   const [lista, setLista] = useState<Jugador[] | null>(null)
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; txt: string } | null>(null)
+  const [afectadas, setAfectadas] = useState<{ j: Jugador; lista: NoElegible[] } | null>(null)
   const [reset, setReset] = useState<{ j: Jugador; pass?: string; error?: string; cargando?: boolean; copiado?: boolean } | null>(null)
 
   const buscar = useCallback(async () => {
@@ -35,6 +38,23 @@ export default function AdminJugadores() {
     if (error) return setMsg({ tipo: 'error', txt: mensajeError(error) })
     setMsg({ tipo: 'ok', txt })
     buscar()
+  }
+
+  /** Recategoriza y avisa si quedaron inscripciones en categorías donde la pareja ya no puede jugar */
+  async function recategorizar(j: Jugador, catId: number, nombre: string) {
+    await actualizar(j, { categoria_id: catId }, `${j.apellido} ahora es ${nombre}`)
+    const { data } = await supabase.rpc('inscripciones_no_elegibles', { p_jugador: j.id })
+    const lista = (data as NoElegible[]) ?? []
+    if (lista.length) setAfectadas({ j, lista })
+  }
+
+  async function cancelarAfectada(i: NoElegible) {
+    if (!afectadas) return
+    const { error } = await supabase.from('inscripciones').update({ estado: 'cancelada' }).eq('id', i.inscripcion_id)
+    if (error) return setMsg({ tipo: 'error', txt: mensajeError(error) })
+    const resto = afectadas.lista.filter((x) => x.inscripcion_id !== i.inscripcion_id)
+    setAfectadas(resto.length ? { ...afectadas, lista: resto } : null)
+    setMsg({ tipo: 'ok', txt: `Inscripción cancelada: ${i.torneo} · ${i.categoria}${i.en_zona ? '. Rearmá esa zona desde la categoría del torneo.' : ''}` })
   }
 
   async function resetear() {
@@ -105,7 +125,7 @@ export default function AdminJugadores() {
                       onChange={(e) => {
                         const nueva = categorias.find((c) => c.id === Number(e.target.value))!
                         if (confirm(`¿Recategorizar a ${j.nombre} ${j.apellido} en ${nueva.nombre}?`))
-                          actualizar(j, { categoria_id: nueva.id }, `${j.apellido} ahora es ${nueva.nombre}`)
+                          recategorizar(j, nueva.id, nueva.nombre)
                       }}
                     >
                       {catsNivel.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
@@ -148,6 +168,30 @@ export default function AdminJugadores() {
         </div>
       )}
       <p className="mt-3 text-xs text-noche/55">Se muestran hasta 100 jugadores; usá la búsqueda para encontrar el resto.</p>
+
+      <Modal abierto={!!afectadas} titulo="Inscripciones a revisar" onCerrar={() => setAfectadas(null)}>
+        {afectadas && (
+          <div className="space-y-4">
+            <p className="text-sm">
+              Con la nueva categoría, <strong>{afectadas.j.nombre} {afectadas.j.apellido}</strong> tiene inscripciones en categorías
+              en las que su pareja ya no puede jugar. Podés cancelarlas o dejarlas para que terminen ese torneo donde se anotaron.
+            </p>
+            <ul className="divide-y divide-noche/10 rounded-lg ring-1 ring-noche/10">
+              {afectadas.lista.map((i) => (
+                <li key={i.inscripcion_id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+                  <div>
+                    <p className="font-medium">{i.torneo} · {i.categoria}</p>
+                    <p className="text-xs text-noche/55">{i.pareja}</p>
+                    {i.en_zona && <p className="text-xs text-amber-800">Ya está en una zona: si la cancelás, esa zona queda para rearmar.</p>}
+                  </div>
+                  <Button variante="peligro" onClick={() => cancelarAfectada(i)}>Cancelar inscripción</Button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end"><Button variante="secundario" onClick={() => setAfectadas(null)}>Dejarlas así</Button></div>
+          </div>
+        )}
+      </Modal>
 
       <Modal abierto={!!reset} titulo="Resetear contraseña" onCerrar={() => setReset(null)}>
         {reset && !reset.pass && (
