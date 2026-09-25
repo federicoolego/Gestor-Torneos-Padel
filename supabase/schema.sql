@@ -118,13 +118,14 @@ create table public.sedes (
   id         uuid primary key default gen_random_uuid(),
   nombre     text not null unique,
   direccion  text,
+  canchas    smallint not null default 1 check (canchas between 1 and 20),
   activa     boolean not null default true,
   created_at timestamptz not null default now()
 );
-insert into public.sedes (nombre, direccion) values
-  ('El Clásico',   'Malaspina, Villa Ramallo'),
-  ('El Clásico 2', null),
-  ('Complejo PM',  'Av. Savio 450, Ramallo');
+insert into public.sedes (nombre, direccion, canchas) values
+  ('El Clásico',   'Malaspina, Villa Ramallo', 3),
+  ('El Clásico 2', null,                       1),
+  ('Complejo PM',  'Av. Savio 450, Ramallo',   2);
 
 create table public.parejas (
   id           uuid primary key default gen_random_uuid(),
@@ -885,6 +886,27 @@ $$;
 --     Por defecto arma floor(N/3) zonas: la mayoría de 3 y el resto de 4.
 --     Así nunca hay más de 16 clasificados (máximo: octavos de final).
 -- ---------------------------------------------------------------------
+-- Crea los partidos de una zona. p_parejas en orden de posición (1..3 ó 1..4):
+-- zona de 3: todos contra todos · zona de 4: 1v4 y 2v3, luego ganadores y perdedores.
+create or replace function public.crear_partidos_zona(p_tc uuid, p_zona uuid, p_parejas uuid[])
+returns void language plpgsql security definer set search_path = public as $$
+declare s uuid[] := p_parejas;
+begin
+  if not public.es_sistema_o_admin() then raise exception 'Solo el administrador puede armar zonas'; end if;
+  if array_length(s, 1) = 3 then
+    insert into public.partidos (torneo_categoria_id, fase, zona_id, ronda, orden, pareja_a_id, pareja_b_id, super_tiebreak) values
+      (p_tc, 'zona', p_zona, 1, 1, s[1], s[2], true),
+      (p_tc, 'zona', p_zona, 2, 1, s[1], s[3], true),
+      (p_tc, 'zona', p_zona, 3, 1, s[2], s[3], true);
+  else
+    insert into public.partidos (torneo_categoria_id, fase, zona_id, ronda, orden, tipo_zona, pareja_a_id, pareja_b_id, super_tiebreak) values
+      (p_tc, 'zona', p_zona, 1, 1, null,         s[1], s[4], true),
+      (p_tc, 'zona', p_zona, 1, 2, null,         s[2], s[3], true),
+      (p_tc, 'zona', p_zona, 2, 1, 'ganadores',  null, null, true),
+      (p_tc, 'zona', p_zona, 2, 2, 'perdedores', null, null, true);
+  end if;
+end $$;
+
 create or replace function public.generar_zonas(
   p_torneo_categoria uuid,
   p_cantidad_zonas int default null,
@@ -947,18 +969,7 @@ begin
     end loop;
     v_idx := v_idx + v_tam;
 
-    if v_tam = 3 then
-      insert into public.partidos (torneo_categoria_id, fase, zona_id, ronda, orden, pareja_a_id, pareja_b_id, super_tiebreak) values
-        (p_torneo_categoria, 'zona', v_zona, 1, 1, s[1], s[2], true),
-        (p_torneo_categoria, 'zona', v_zona, 2, 1, s[1], s[3], true),
-        (p_torneo_categoria, 'zona', v_zona, 3, 1, s[2], s[3], true);
-    else
-      insert into public.partidos (torneo_categoria_id, fase, zona_id, ronda, orden, tipo_zona, pareja_a_id, pareja_b_id, super_tiebreak) values
-        (p_torneo_categoria, 'zona', v_zona, 1, 1, null,         s[1], s[4], true),
-        (p_torneo_categoria, 'zona', v_zona, 1, 2, null,         s[2], s[3], true),
-        (p_torneo_categoria, 'zona', v_zona, 2, 1, 'ganadores',  null, null, true),
-        (p_torneo_categoria, 'zona', v_zona, 2, 2, 'perdedores', null, null, true);
-    end if;
+    perform public.crear_partidos_zona(p_torneo_categoria, v_zona, s);
   end loop;
 
   update public.torneo_categorias set estado = 'zonas' where id = p_torneo_categoria;
@@ -966,6 +977,88 @@ begin
 end $$;
 
 -- Intercambia dos parejas entre zonas (útil por problemas de horario)
+-- Armado manual: p_zonas = [[insc_A1, insc_A2, insc_A3], [insc_B1, ...], ...]
+-- (el orden dentro de cada zona es la posición: en zonas de 4 cruza 1v4 y 2v3).
+-- Tienen que estar todas las parejas activas, cada una una sola vez, en zonas de 3 o 4.
+-- Si la categoría ya tenía zonas, se reemplazan conservando sede/horario de los partidos que
+-- no cambian de parejas.
+create or replace function public.armar_zonas_manual(p_torneo_categoria uuid, p_zonas jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  v_tc public.torneo_categorias;
+  v_letras text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  v_z int := jsonb_array_length(p_zonas);
+  v_ids uuid[];
+  v_zona uuid;
+  v_prog jsonb;
+  i int;
+  s uuid[];
+begin
+  if not public.es_sistema_o_admin() then raise exception 'Solo el administrador puede armar zonas'; end if;
+
+  select * into v_tc from public.torneo_categorias where id = p_torneo_categoria for update;
+  if v_tc.id is null then raise exception 'Categoría de torneo inexistente'; end if;
+  if v_tc.estado not in ('inscripcion', 'zonas') then
+    raise exception 'La categoría ya está en playoff o finalizada';
+  end if;
+  if exists (select 1 from public.partidos where torneo_categoria_id = p_torneo_categoria and estado in ('finalizado', 'wo')) then
+    raise exception 'Ya hay resultados cargados: no se pueden rearmar las zonas';
+  end if;
+  if v_z < 1 or v_z > 26 then raise exception 'Cantidad de zonas inválida'; end if;
+
+  for i in 0..v_z - 1 loop
+    if jsonb_array_length(p_zonas -> i) not between 3 and 4 then
+      raise exception 'La zona % tiene % parejas: cada zona tiene que tener 3 o 4',
+        substr(v_letras, i + 1, 1), jsonb_array_length(p_zonas -> i);
+    end if;
+  end loop;
+
+  select array_agg(x::uuid) into v_ids
+  from jsonb_array_elements(p_zonas) z, jsonb_array_elements_text(z) x;
+
+  if (select count(distinct u) from unnest(v_ids) u) <> array_length(v_ids, 1) then
+    raise exception 'Hay una pareja repetida en más de una zona';
+  end if;
+  if exists (select unnest(v_ids) except
+             select id from public.inscripciones where torneo_categoria_id = p_torneo_categoria and estado = 'activa') then
+    raise exception 'Hay parejas que no están inscriptas (o están canceladas) en esta categoría';
+  end if;
+  if exists (select id from public.inscripciones where torneo_categoria_id = p_torneo_categoria and estado = 'activa'
+             except select unnest(v_ids)) then
+    raise exception 'Faltan parejas inscriptas por ubicar en alguna zona';
+  end if;
+
+  -- guardar la programación actual por cruce (pareja_a, pareja_b) para no perderla
+  select coalesce(jsonb_agg(jsonb_build_object('a', pareja_a_id, 'b', pareja_b_id, 'z', z.nombre, 'r', p.ronda, 'o', p.orden,
+                                               'sede', sede_id, 'cancha', cancha, 'fh', fecha_hora)), '[]')
+    into v_prog
+  from public.partidos p join public.zonas z on z.id = p.zona_id
+  where p.torneo_categoria_id = p_torneo_categoria and (p.sede_id is not null or p.fecha_hora is not null);
+
+  delete from public.partidos where torneo_categoria_id = p_torneo_categoria;
+  delete from public.zonas where torneo_categoria_id = p_torneo_categoria;
+
+  for i in 0..v_z - 1 loop
+    insert into public.zonas (torneo_categoria_id, nombre)
+    values (p_torneo_categoria, substr(v_letras, i + 1, 1)) returning id into v_zona;
+    select array_agg(x::uuid order by n) into s from jsonb_array_elements_text(p_zonas -> i) with ordinality t(x, n);
+    insert into public.zona_parejas (zona_id, inscripcion_id, posicion_sorteo)
+    select v_zona, u, n from unnest(s) with ordinality t(u, n);
+    perform public.crear_partidos_zona(p_torneo_categoria, v_zona, s);
+  end loop;
+
+  -- reponer sede/horario: mismo cruce de parejas, o mismo partido de zona de 4 (ronda 2) en la misma zona
+  update public.partidos p set sede_id = (g ->> 'sede')::uuid, cancha = g ->> 'cancha', fecha_hora = (g ->> 'fh')::timestamptz
+  from jsonb_array_elements(v_prog) g, public.zonas z
+  where p.torneo_categoria_id = p_torneo_categoria and z.id = p.zona_id
+    and ((p.pareja_a_id is not null and least(p.pareja_a_id, p.pareja_b_id) = least((g ->> 'a')::uuid, (g ->> 'b')::uuid)
+          and greatest(p.pareja_a_id, p.pareja_b_id) = greatest((g ->> 'a')::uuid, (g ->> 'b')::uuid))
+      or (p.pareja_a_id is null and g ->> 'a' is null and z.nombre = g ->> 'z' and p.ronda = (g ->> 'r')::int and p.orden = (g ->> 'o')::int));
+
+  update public.torneo_categorias set estado = 'zonas' where id = p_torneo_categoria;
+  return v_z;
+end $$;
+
 create or replace function public.intercambiar_parejas_zona(p_ins1 uuid, p_ins2 uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare

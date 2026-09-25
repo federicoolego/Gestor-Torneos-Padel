@@ -3,6 +3,7 @@ import { MapPin, Clock, Pencil } from 'lucide-react'
 import type { PartidoVista } from '../lib/types'
 import { FASE_LABEL, fechaHora } from '../lib/formato'
 import { formatoPartido, setsDe } from '../lib/resultado'
+import { nombreCancha, toleranciaHasta } from '../lib/reglas'
 import { Badge, Button } from './ui'
 import ResultadoModal from './ResultadoModal'
 
@@ -97,9 +98,13 @@ export function PartidoFila({
             {mostrarCategoria && `${p.torneo} · ${p.categoria} · `}{etiquetaPartido(p)}
           </span>
           <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" aria-hidden />{fechaHora(p.fecha_hora)}</span>
+          {p.estado === 'pendiente' && p.fecha_hora && (
+            <span className="font-semibold text-noche">Presentarse hasta las {toleranciaHasta(p.fecha_hora)}</span>
+          )}
           <span className="inline-flex items-center gap-1">
             <MapPin className="h-3.5 w-3.5" aria-hidden />
-            {p.sede ?? 'Sede a confirmar'}{p.cancha ? ` · Cancha ${p.cancha}` : ''}
+            {p.sede ?? 'Sede a confirmar'}
+            {p.cancha && <>{` · ${nombreCancha(p.cancha)}`}{p.estado === 'pendiente' && <span className="text-noche/45"> (orientativa)</span>}</>}
           </span>
         </div>
         {p.estado === 'pendiente' && <Badge>{formatoPartido(p)}</Badge>}

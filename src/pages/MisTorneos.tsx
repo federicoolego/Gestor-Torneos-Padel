@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import type { MiInscripcion, PartidoVista } from '../lib/types'
 import { ESTADO_CATEGORIA_LABEL, rangoFechas } from '../lib/formato'
 import { Badge, Spinner, Titulo, Vacio } from '../components/ui'
+import { ReglasTorneo } from '../components/Reglas'
 import { PartidoFila } from '../components/Partidos'
 
 export default function MisTorneos() {
@@ -61,6 +62,7 @@ export default function MisTorneos() {
           </section>
           <section>
             <h2 className="mb-3 font-display text-xl font-semibold text-noche/70">Próximos partidos</h2>
+            {proximos.length > 0 && <div className="mb-3"><ReglasTorneo compacto /></div>}
             {proximos.length === 0 ? <p className="text-sm text-noche/60">No tenés partidos pendientes. Aparecen cuando se arman las zonas o avanzás en el cuadro.</p> : (
               <div className="grid gap-3 lg:grid-cols-2">
                 {proximos.map((p) => <PartidoFila key={p.id} p={p} puedeCargar={esEditor} esAdmin={esAdmin} onCambio={() => setN(n + 1)} resaltarIds={misIds} mostrarCategoria />)}

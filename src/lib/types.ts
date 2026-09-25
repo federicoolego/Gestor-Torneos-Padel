@@ -38,6 +38,8 @@ export interface Sede {
   id: string
   nombre: string
   direccion: string | null
+  /** cantidad de canchas del complejo */
+  canchas: number
   activa: boolean
 }
 

@@ -1,3 +1,4 @@
+import { ReglasTorneo } from '../components/Reglas'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, CalendarRange, Hourglass, Settings2 } from 'lucide-react'
@@ -90,7 +91,7 @@ export default function TorneoDetalle() {
             <h1 className="font-display text-4xl font-bold leading-none sm:text-5xl">{torneo.nombre}</h1>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-white/75">
               <span className="inline-flex items-center gap-1.5"><CalendarRange className="h-4 w-4" aria-hidden />{rangoFechas(torneo.fecha_desde, torneo.fecha_hasta)}</span>
-              {torneo.americano && <span className="font-semibold text-noche">Americano · un set a {torneo.games_set_unico} games</span>}
+              {torneo.americano && <span className="font-semibold text-pelota">Americano · un set a {torneo.games_set_unico} games</span>}
               <span className="inline-flex items-center gap-1.5"><Hourglass className="h-4 w-4" aria-hidden />
                 {inscripcionAbierta(torneo) ? faltaPara(torneo.cierre_inscripcion) : `Inscripción cerró el ${fechaHora(torneo.cierre_inscripcion)}`}
               </span>
@@ -112,6 +113,8 @@ export default function TorneoDetalle() {
         </div>
         {torneo.observaciones && <p className="mt-4 border-t border-white/15 pt-3 text-xs text-white/65">{torneo.observaciones}</p>}
       </header>
+
+      <div className="mb-6"><ReglasTorneo /></div>
 
       {cats.length === 0 ? (
         <Vacio titulo="Este torneo todavía no tiene categorías" />
@@ -305,6 +308,7 @@ function InscribirModal({
           <Field label="Problemas de horario" hint="Podés modificarlo hasta el cierre de inscripción.">
             <Textarea value={horario} onChange={(e) => setHorario(e.target.value)} placeholder="Ej: el viernes no podemos antes de las 20 h. Si no tienen, escribí 'Ninguno'." />
           </Field>
+          <ReglasTorneo compacto />
           <Alerta tipo="aviso">
             Podés cancelar la inscripción hasta el {fechaHora(torneo.cierre_inscripcion)}. Después del cierre, si la pareja no se presenta, la inscripción se cobra igual.
           </Alerta>

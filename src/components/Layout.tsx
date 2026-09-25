@@ -1,5 +1,6 @@
-import { NavLink, Outlet } from 'react-router-dom'
-import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { ROL_LABEL } from '../lib/formato'
 
@@ -37,6 +38,10 @@ function Enlace({ to, label, icono: Icono }: (typeof MENU)[number]) {
 export default function Layout() {
   const { jugador, esAdmin, salir, categorias } = useAuth()
   const cat = categorias.find((c) => c.id === jugador?.categoria_id)
+  const [adminAbierto, setAdminAbierto] = useState(false)
+  const { pathname } = useLocation()
+  const enAdmin = pathname.startsWith('/admin')
+  useEffect(() => setAdminAbierto(false), [pathname])
 
   return (
     <div className="min-h-screen lg:flex">
@@ -68,9 +73,6 @@ export default function Layout() {
       <header className="flex items-center justify-between bg-noche px-4 py-3 lg:hidden" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
         <Marca />
         <div className="flex items-center gap-3">
-          {esAdmin && (
-            <NavLink to="/admin/torneos" className="rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-white">Admin</NavLink>
-          )}
           <button onClick={salir} aria-label="Cerrar sesión" className="text-white/70"><LogOut className="h-5 w-5" /></button>
         </div>
       </header>
@@ -84,7 +86,7 @@ export default function Layout() {
       {/* Tab bar móvil */}
       <nav
         aria-label="Principal"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-noche/10 bg-white lg:hidden"
+        className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-noche/10 bg-white lg:hidden ${esAdmin ? 'grid-cols-6' : 'grid-cols-5'}`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         {MENU.map(({ to, label, icono: Icono }) => (
@@ -99,7 +101,39 @@ export default function Layout() {
             <span className="text-center">{label.replace('Mis ', '')}</span>
           </NavLink>
         ))}
+        {esAdmin && (
+          <button
+            onClick={() => setAdminAbierto(true)}
+            aria-haspopup="dialog"
+            className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium leading-tight ${enAdmin ? 'text-cancha' : 'text-noche/55'}`}
+          >
+            <ShieldCheck className="h-5 w-5" aria-hidden />
+            <span>Admin</span>
+          </button>
+        )}
       </nav>
+
+      {/* Menú de administración en móvil */}
+      {esAdmin && adminAbierto && (
+        <div className="fixed inset-0 z-50 bg-noche/50 lg:hidden" onClick={() => setAdminAbierto(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Administración"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute inset-x-0 bottom-0 rounded-t-2xl bg-noche px-4 pt-4 text-white"
+            style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-display text-xl font-bold">Administración</p>
+              <button onClick={() => setAdminAbierto(false)} aria-label="Cerrar" className="text-white/70"><X className="h-5 w-5" /></button>
+            </div>
+            <nav className="flex flex-col gap-1" aria-label="Administración">
+              {ADMIN.map((m) => <Enlace key={m.to} {...m} />)}
+            </nav>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

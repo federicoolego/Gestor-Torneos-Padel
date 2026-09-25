@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Phone, Shuffle, Trophy, ArrowLeftRight } from 'lucide-react'
+import { ArrowLeft, Phone, Trophy } from 'lucide-react'
 import { supabase, mensajeError } from '../../lib/supabase'
 import type { InscriptoAdmin, PartidoVista, Sede, Torneo, TorneoCategoriaVista, Zona } from '../../lib/types'
-import { aInputLocal, desdeInputLocal, ESTADO_CATEGORIA_LABEL, fechaHora } from '../../lib/formato'
-import { resumenSets } from '../../lib/resultado'
-import { Alerta, Badge, Button, Card, Field, Input, Select, Spinner, Tabs, Titulo, Vacio } from '../../components/ui'
+import { ESTADO_CATEGORIA_LABEL, fechaHora } from '../../lib/formato'
+import { Alerta, Badge, Button, Card, Spinner, Tabs, Titulo, Vacio } from '../../components/ui'
 import { ZonaTabla } from '../../components/Zonas'
-import { etiquetaPartido } from '../../components/Partidos'
+import ArmadoZonas, { Horario } from '../../components/admin/ArmadoZonas'
+import Programacion from '../../components/admin/Programacion'
 import Bracket from '../../components/Bracket'
 import ResultadoModal from '../../components/ResultadoModal'
 
@@ -18,7 +18,8 @@ export default function AdminTorneoCategoria() {
   const [torneo, setTorneo] = useState<Torneo | null>(null)
   const [tc, setTc] = useState<TorneoCategoriaVista | null>(null)
   const [inscriptos, setInscriptos] = useState<InscriptoAdmin[]>([])
-  const [zonas, setZonas] = useState<(Zona & { zona_parejas: { inscripcion_id: string }[] })[]>([])
+  const [zonas, setZonas] = useState<(Zona & { zona_parejas: { inscripcion_id: string; posicion_sorteo: number }[] })[]>([])
+  const [ocupados, setOcupados] = useState<PartidoVista[]>([])
   const [partidos, setPartidos] = useState<PartidoVista[]>([])
   const [sedes, setSedes] = useState<Sede[]>([])
   const [tab, setTab] = useState<Tab>('inscriptos')
@@ -31,11 +32,20 @@ export default function AdminTorneoCategoria() {
       supabase.from('torneos').select('*').eq('id', id!).single(),
       supabase.from('v_torneo_categorias').select('*').eq('id', tcId!).single(),
       supabase.rpc('admin_inscriptos', { p_torneo_categoria: tcId }),
-      supabase.from('zonas').select('*, zona_parejas(inscripcion_id)').eq('torneo_categoria_id', tcId!).order('nombre'),
+      supabase.from('zonas').select('*, zona_parejas(inscripcion_id, posicion_sorteo)').eq('torneo_categoria_id', tcId!).order('nombre'),
       supabase.from('v_partidos').select('*').eq('torneo_categoria_id', tcId!).order('ronda').order('orden'),
       supabase.from('sedes').select('*').eq('activa', true).order('nombre'),
     ])
-    setTorneo(t.data as Torneo)
+    const tor = t.data as Torneo | null
+    if (tor) {
+      // partidos de todos los torneos en las fechas de este, para ver la ocupación de canchas
+      const hasta = new Date(`${tor.fecha_hasta}T00:00:00-03:00`)
+      hasta.setDate(hasta.getDate() + 1)
+      const { data: oc } = await supabase.from('v_partidos').select('*')
+        .gte('fecha_hora', `${tor.fecha_desde}T00:00:00-03:00`).lt('fecha_hora', hasta.toISOString()).neq('estado', 'bye')
+      setOcupados((oc as PartidoVista[]) ?? [])
+    }
+    setTorneo(tor)
     setTc(c.data as TorneoCategoriaVista)
     setInscriptos((i.data as InscriptoAdmin[]) ?? [])
     setZonas((z.data as typeof zonas) ?? [])
@@ -45,6 +55,18 @@ export default function AdminTorneoCategoria() {
   useEffect(() => { cargar() }, [cargar])
 
   const activos = inscriptos.filter((i) => i.estado === 'activa')
+  const dias = useMemo(() => {
+    if (!torneo) return []
+    const out: string[] = []
+    for (let d = new Date(`${torneo.fecha_desde}T12:00:00-03:00`); d <= new Date(`${torneo.fecha_hasta}T12:00:00-03:00`); d.setDate(d.getDate() + 1)) {
+      out.push(d.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }))
+    }
+    return out
+  }, [torneo])
+  const zonasIniciales = useMemo(
+    () => zonas.map((z) => [...z.zona_parejas].sort((a, b) => a.posicion_sorteo - b.posicion_sorteo).map((zp) => zp.inscripcion_id)),
+    [zonas],
+  )
   const nombres = useMemo(() => Object.fromEntries(inscriptos.map((i) => [i.id, i.pareja])), [inscriptos])
   const horarios = useMemo(() => Object.fromEntries(inscriptos.map((i) => [i.id, i.problemas_horario])), [inscriptos])
 
@@ -101,28 +123,41 @@ export default function AdminTorneoCategoria() {
         )}
 
         {tab === 'zonas' && (
-          <GestionZonas
-            n={activos.length}
-            tc={tc}
-            cierreVencido={cierreVencido}
-            zonas={zonas}
-            partidos={zonaPartidos}
-            nombres={nombres}
-            trabajando={trabajando}
-            onGenerar={(cant, aleatorio) => ejecutar(() => supabase.rpc('generar_zonas', { p_torneo_categoria: tc.id, p_cantidad_zonas: cant, p_aleatorio: aleatorio }), 'Zonas generadas con sus partidos')}
-            onIntercambiar={(a, b) => ejecutar(() => supabase.rpc('intercambiar_parejas_zona', { p_ins1: a, p_ins2: b }), 'Parejas intercambiadas')}
-          />
+          <div className="space-y-6">
+            {tc.estado !== 'playoff' && tc.estado !== 'finalizada' && tc.estado !== 'suspendida' && !zonaPartidos.some((p) => p.estado === 'finalizado' || p.estado === 'wo') ? (
+              <ArmadoZonas
+                activos={activos}
+                inicial={zonasIniciales}
+                cupoMin={tc.cupo_min}
+                cierreVencido={cierreVencido}
+                trabajando={trabajando}
+                onGuardar={(zs) => ejecutar(() => supabase.rpc('armar_zonas_manual', { p_torneo_categoria: tc.id, p_zonas: zs }), 'Zonas guardadas con sus partidos. Ahora programalos en la pestaña Programación.')}
+              />
+            ) : zonas.length > 0 && (
+              <Alerta>Ya hay resultados cargados: las zonas no se pueden modificar.</Alerta>
+            )}
+            {zonas.length > 0 && zonaPartidos.some((p) => p.estado === 'finalizado' || p.estado === 'wo') && (
+              <div className="grid gap-5 lg:grid-cols-2">
+                {zonas.map((z) => (
+                  <ZonaTabla key={z.id} zona={z} nombres={nombres} cantidad={z.zona_parejas.length} partidos={zonaPartidos.filter((p) => p.zona_id === z.id)} />
+                ))}
+              </div>
+            )}
+            {zonas.length === 0 && tc.estado !== 'inscripcion' && <Vacio titulo="Todavía no hay zonas" />}
+          </div>
         )}
 
         {tab === 'programacion' && (
-          partidos.filter((p) => p.estado !== 'bye').length === 0 ? <Vacio titulo="No hay partidos para programar">Primero generá las zonas.</Vacio> : (
-            <div className="space-y-3">
-              <Alerta>Asigná sede, cancha, día y hora. Debajo de cada pareja ves sus problemas de horario.</Alerta>
-              {partidos.filter((p) => p.estado !== 'bye').map((p) => (
-                <FilaProgramacion key={p.id} p={p} sedes={sedes} horarios={horarios} onGuardado={cargar} onResultado={() => setElegido(p)} />
-              ))}
-            </div>
-          )
+          <Programacion
+            partidos={partidos}
+            sedes={sedes}
+            horarios={horarios}
+            ocupados={ocupados}
+            tcId={tc.id}
+            dias={dias}
+            onGuardado={cargar}
+            onResultado={setElegido}
+          />
         )}
 
         {tab === 'playoff' && (
@@ -174,11 +209,11 @@ function Inscriptos({
       )}
       {lista.length === 0 ? <Vacio titulo="Todavía no hay inscriptos" /> : (
         <div className="overflow-x-auto rounded-xl bg-white ring-1 ring-noche/10">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b border-noche/10 text-left text-xs text-noche/55">
                 <th className="px-4 py-2 font-medium">Pareja</th>
-                <th className="py-2 font-medium">Problemas de horario</th>
+                <th className="hidden py-2 font-medium lg:table-cell">Problemas de horario</th>
                 <th className="py-2 font-medium">Zona</th>
                 <th className="py-2 font-medium">Pago</th>
                 <th className="px-4 py-2" />
@@ -194,9 +229,10 @@ function Inscriptos({
                         <a href={`tel:${t}`} className="ml-2 inline-flex items-center gap-1 text-xs text-cancha"><Phone className="h-3 w-3" aria-hidden />{t}</a>
                       </div>
                     ))}
+                    <div className="mt-1 lg:hidden"><Horario texto={i.problemas_horario} /></div>
                     {i.estado === 'cancelada' && <Badge tono="rojo">Cancelada</Badge>}
                   </td>
-                  <td className="max-w-xs whitespace-pre-line py-3 pr-4 text-noche/80">{i.problemas_horario || '—'}</td>
+                  <td className="hidden max-w-xs py-3 pr-4 lg:table-cell"><Horario texto={i.problemas_horario} /></td>
                   <td className="py-3">{i.zona ?? '—'}</td>
                   <td className="py-3">
                     <label className="inline-flex items-center gap-2">
@@ -212,148 +248,6 @@ function Inscriptos({
           </table>
         </div>
       )}
-    </div>
-  )
-}
-
-function GestionZonas({
-  n, tc, cierreVencido, zonas, partidos, nombres, trabajando, onGenerar, onIntercambiar,
-}: {
-  n: number
-  tc: TorneoCategoriaVista
-  cierreVencido: boolean
-  zonas: (Zona & { zona_parejas: { inscripcion_id: string }[] })[]
-  partidos: PartidoVista[]
-  nombres: Record<string, string>
-  trabajando: boolean
-  onGenerar: (cant: number, aleatorio: boolean) => void
-  onIntercambiar: (a: string, b: string) => void
-}) {
-  const min = Math.ceil(n / 4)
-  const max = Math.floor(n / 3)
-  const [cant, setCant] = useState(max)
-  const [aleatorio, setAleatorio] = useState(true)
-  const [a, setA] = useState('')
-  const [b, setB] = useState('')
-  useEffect(() => setCant(max), [max])
-
-  const hayResultados = partidos.some((p) => p.estado === 'finalizado' || p.estado === 'wo')
-  const de4 = n - 3 * cant
-  const clasifican = de4 * 3 + (cant - de4) * 2
-  const todas = zonas.flatMap((z) => z.zona_parejas.map((zp) => ({ id: zp.inscripcion_id, zona: z.nombre })))
-
-  return (
-    <div className="space-y-6">
-      {tc.estado !== 'playoff' && tc.estado !== 'finalizada' && !hayResultados && (
-        <Card>
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="w-40">
-              <Field label="Cantidad de zonas">
-                <Select value={cant} onChange={(e) => setCant(Number(e.target.value))} disabled={n < tc.cupo_min}>
-                  {n >= tc.cupo_min && Array.from({ length: max - min + 1 }, (_, k) => min + k).map((z) => <option key={z} value={z}>{z}</option>)}
-                </Select>
-              </Field>
-            </div>
-            <label className="mb-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={aleatorio} onChange={(e) => setAleatorio(e.target.checked)} /> Sorteo aleatorio</label>
-            <Button
-              onClick={() => (zonas.length === 0 || confirm('Se borran las zonas y partidos actuales. ¿Continuar?')) && onGenerar(cant, aleatorio)}
-              disabled={n < tc.cupo_min}
-              cargando={trabajando}
-            >
-              <Shuffle className="h-4 w-4" aria-hidden /> {zonas.length ? 'Regenerar zonas' : 'Generar zonas'}
-            </Button>
-          </div>
-          <p className="mt-3 text-sm text-noche/70">
-            {n < tc.cupo_min
-              ? `Hay ${n} parejas; se necesitan al menos ${tc.cupo_min}.`
-              : `${n} parejas → ${cant - de4} zona(s) de 3 y ${de4} de 4 · clasifican ${clasifican} al playoff.`}
-            {!cierreVencido && ' La inscripción todavía está abierta: si generás ahora, las parejas ya no podrán cancelar.'}
-          </p>
-        </Card>
-      )}
-
-      {zonas.length > 0 && !hayResultados && (
-        <Card>
-          <p className="mb-3 font-display text-xl font-semibold">Mover parejas entre zonas</p>
-          <div className="flex flex-wrap items-end gap-3">
-            {[[a, setA], [b, setB]].map(([v, setV], k) => (
-              <div key={k} className="min-w-[12rem] flex-1">
-                <Field label={k === 0 ? 'Pareja' : 'Intercambiar con'}>
-                  <Select value={v as string} onChange={(e) => (setV as (x: string) => void)(e.target.value)}>
-                    <option value="">Elegí</option>
-                    {todas.map((t) => <option key={t.id} value={t.id}>Zona {t.zona} · {nombres[t.id]}</option>)}
-                  </Select>
-                </Field>
-              </div>
-            ))}
-            <Button variante="secundario" onClick={() => a && b && onIntercambiar(a, b)} disabled={!a || !b || trabajando}>
-              <ArrowLeftRight className="h-4 w-4" aria-hidden /> Intercambiar
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {zonas.length === 0 ? <Vacio titulo="Todavía no hay zonas" /> : (
-        <div className="grid gap-5 lg:grid-cols-2">
-          {zonas.map((z) => (
-            <ZonaTabla key={z.id} zona={z} nombres={nombres} cantidad={z.zona_parejas.length} partidos={partidos.filter((p) => p.zona_id === z.id)} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function FilaProgramacion({
-  p, sedes, horarios, onGuardado, onResultado,
-}: {
-  p: PartidoVista
-  sedes: Sede[]
-  horarios: Record<string, string>
-  onGuardado: () => void
-  onResultado: () => void
-}) {
-  const [sede, setSede] = useState(p.sede_id ?? '')
-  const [fh, setFh] = useState(aInputLocal(p.fecha_hora))
-  const [cancha, setCancha] = useState(p.cancha ?? '')
-  const [error, setError] = useState('')
-  const [guardando, setGuardando] = useState(false)
-  const cambiado = sede !== (p.sede_id ?? '') || fh !== aInputLocal(p.fecha_hora) || cancha !== (p.cancha ?? '')
-
-  async function guardar() {
-    setGuardando(true)
-    setError('')
-    const { error } = await supabase.from('partidos').update({ sede_id: sede || null, fecha_hora: desdeInputLocal(fh), cancha: cancha.trim() || null }).eq('id', p.id)
-    setGuardando(false)
-    if (error) return setError(mensajeError(error))
-    onGuardado()
-  }
-
-  return (
-    <div className="grid gap-3 rounded-xl bg-white p-4 ring-1 ring-noche/10 lg:grid-cols-[1.4fr_2fr_auto] lg:items-center">
-      <div className="min-w-0">
-        <p className="font-display text-lg font-semibold">{etiquetaPartido(p)}</p>
-        {[[p.pareja_a, p.pareja_a_id], [p.pareja_b, p.pareja_b_id]].map(([n, pid], k) => (
-          <div key={k} className="text-sm">
-            <span className={n ? 'font-medium' : 'italic text-noche/45'}>{n ?? 'A definir'}</span>
-            {pid && horarios[pid] && <span className="block truncate text-xs text-amber-800" title={horarios[pid]}>Horario: {horarios[pid]}</span>}
-          </div>
-        ))}
-        {p.estado !== 'pendiente' && <p className="mt-1 text-xs font-semibold text-emerald-800">{resumenSets(p)}</p>}
-      </div>
-      <div className="grid gap-2 sm:grid-cols-[1fr_1.2fr_5rem]">
-        <Select value={sede} onChange={(e) => setSede(e.target.value)} aria-label="Sede">
-          <option value="">Sede</option>
-          {sedes.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-        </Select>
-        <Input type="datetime-local" value={fh} onChange={(e) => setFh(e.target.value)} aria-label="Fecha y hora" />
-        <Input value={cancha} onChange={(e) => setCancha(e.target.value)} placeholder="Cancha" aria-label="Cancha" />
-        {error && <p className="text-xs text-red sm:col-span-3">{error}</p>}
-      </div>
-      <div className="flex gap-2 lg:justify-end">
-        <Button variante="secundario" onClick={guardar} disabled={!cambiado} cargando={guardando}>Guardar</Button>
-        {p.pareja_a_id && p.pareja_b_id && <Button variante="fantasma" onClick={onResultado}>{p.estado === 'pendiente' ? 'Resultado' : 'Editar'}</Button>}
-      </div>
     </div>
   )
 }
