@@ -24,7 +24,7 @@ export function PantallaAcceso({ children }: { children: React.ReactNode }) {
         </div>
         <div className="absolute inset-0 flex flex-col items-center justify-center px-10 text-center">
           <img src={`${import.meta.env.BASE_URL}logo-el-clasico.webp`} alt="El Clásico Fútbol & Pádel" width={320} height={320} className="w-72 max-w-full" />
-          <p className="mt-6 font-display text-5xl font-bold leading-[0.95] text-white">Torneos de pádel del complejo El Clásico</p>
+          <p className="mt-6 font-display text-5xl font-bold leading-[0.95] text-white">Torneos de Pádel</p>
           <p className="mt-3 max-w-md text-sm text-white/70">Inscribí tu pareja, seguí tus partidos y mirá el cuadro en vivo.</p>
         </div>
       </div>
