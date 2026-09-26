@@ -24,6 +24,7 @@ drop table if exists public.torneos cascade;
 drop table if exists public.parejas cascade;
 drop table if exists public.jugador_categoria_historial cascade;
 drop table if exists public.jugadores cascade;
+drop table if exists public.auditoria cascade;
 drop table if exists public.canchas cascade;
 drop table if exists public.sedes cascade;
 drop table if exists public.categorias cascade;
@@ -975,6 +976,7 @@ declare
   s uuid[];
 begin
   if not public.es_sistema_o_admin() then raise exception 'Solo el administrador puede armar zonas'; end if;
+  perform set_config('app.sin_auditoria', 'on', true);
 
   select * into v_tc from public.torneo_categorias where id = p_torneo_categoria for update;
   if v_tc.id is null then raise exception 'Categoría de torneo inexistente'; end if;
@@ -1020,6 +1022,8 @@ begin
   end loop;
 
   update public.torneo_categorias set estado = 'zonas' where id = p_torneo_categoria;
+  perform public.registrar('zonas', 'Zonas generadas automáticamente: ' || public.aud_tc(p_torneo_categoria) || ' (' || v_z || ' zonas)', p_torneo_categoria);
+  perform set_config('app.sin_auditoria', 'off', true);
   return v_z;
 end $$;
 
@@ -1042,6 +1046,7 @@ declare
   s uuid[];
 begin
   if not public.es_sistema_o_admin() then raise exception 'Solo el administrador puede armar zonas'; end if;
+  perform set_config('app.sin_auditoria', 'on', true);
 
   select * into v_tc from public.torneo_categorias where id = p_torneo_categoria for update;
   if v_tc.id is null then raise exception 'Categoría de torneo inexistente'; end if;
@@ -1103,6 +1108,9 @@ begin
       or (p.pareja_a_id is null and g ->> 'a' is null and z.nombre = g ->> 'z' and p.ronda = (g ->> 'r')::int and p.orden = (g ->> 'o')::int));
 
   update public.torneo_categorias set estado = 'zonas' where id = p_torneo_categoria;
+  perform public.registrar('zonas', 'Zonas armadas: ' || public.aud_tc(p_torneo_categoria) || ' (' || v_z || ' zonas, ' ||
+    jsonb_array_length(jsonb_path_query_array(p_zonas, '$[*][*]')) || ' parejas)', p_torneo_categoria);
+  perform set_config('app.sin_auditoria', 'off', true);
   return v_z;
 end $$;
 
@@ -1113,6 +1121,7 @@ declare
   z2 public.zona_parejas;
 begin
   if not public.es_sistema_o_admin() then raise exception 'Solo el administrador puede mover parejas'; end if;
+  perform set_config('app.sin_auditoria', 'on', true);
   select * into z1 from public.zona_parejas where inscripcion_id = p_ins1;
   select * into z2 from public.zona_parejas where inscripcion_id = p_ins2;
   if z1.zona_id is null or z2.zona_id is null then raise exception 'Ambas parejas deben estar asignadas a una zona'; end if;
@@ -1130,6 +1139,8 @@ begin
     pareja_a_id = case pareja_a_id when p_ins1 then p_ins2 when p_ins2 then p_ins1 else pareja_a_id end,
     pareja_b_id = case pareja_b_id when p_ins1 then p_ins2 when p_ins2 then p_ins1 else pareja_b_id end
   where zona_id in (z1.zona_id, z2.zona_id);
+  perform public.registrar('zonas', 'Parejas intercambiadas entre zonas: ' || coalesce(public.aud_inscripcion(p_ins1), '?') || ' ↔ ' || coalesce(public.aud_inscripcion(p_ins2), '?'));
+  perform set_config('app.sin_auditoria', 'off', true);
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -1168,6 +1179,7 @@ declare
   r int; j int; k int; s int; n int;
 begin
   if not public.es_sistema_o_admin() then raise exception 'Solo el administrador puede armar el playoff'; end if;
+  perform set_config('app.sin_auditoria', 'on', true);
 
   select * into v_tc from public.torneo_categorias where id = p_torneo_categoria for update;
   if v_tc.estado not in ('zonas', 'playoff') then
@@ -1277,6 +1289,8 @@ begin
 
   perform set_config('app.interno', 'off', true);
   update public.torneo_categorias set estado = 'playoff' where id = p_torneo_categoria;
+  perform public.registrar('zonas', 'Playoff generado: ' || public.aud_tc(p_torneo_categoria) || ' (' || v_q || ' clasificados)', p_torneo_categoria);
+  perform set_config('app.sin_auditoria', 'off', true);
   return v_q;
 end $$;
 
@@ -1431,6 +1445,8 @@ begin
   delete from auth.sessions where user_id = p_jugador;  -- cierra sesiones abiertas (cascadea refresh tokens)
 
   update public.jugadores set debe_cambiar_password = true where id = p_jugador;
+  perform public.registrar('jugador', 'Contraseña reseteada: ' ||
+    (select nombre || ' ' || apellido || ' (' || dni || ')' from public.jugadores where id = p_jugador), p_jugador);
   return v_pass;
 end $$;
 
@@ -1568,6 +1584,233 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- ---------------------------------------------------------------------
+-- 12e. Auditoría (Logs): movimientos de administradores y editores
+-- ---------------------------------------------------------------------
+-- Se registra con triggers sobre las tablas y desde las funciones de armado. Solo quedan
+-- los movimientos hechos por un usuario logueado con rol editor o administrador (lo que se
+-- corre desde el SQL Editor o lo que el sistema propaga solo no se registra).
+create table public.auditoria (
+  id          bigint generated always as identity primary key,
+  created_at  timestamptz not null default now(),
+  usuario_id  uuid references public.jugadores(id) on delete set null,
+  usuario     text not null,                 -- nombre y DNI al momento del movimiento
+  rol         public.rol_usuario not null,   -- rol al momento del movimiento
+  tipo        text not null,                 -- torneo · categoria · inscripcion · jugador · resultado · programacion · zonas · sede · config
+  movimiento  text not null,
+  entidad_id  uuid
+);
+create index on public.auditoria (created_at desc);
+create index on public.auditoria (usuario_id);
+create index on public.auditoria (tipo);
+
+create or replace function public.registrar(p_tipo text, p_movimiento text, p_entidad uuid default null)
+returns void language plpgsql volatile security definer set search_path = public as $$
+declare j public.jugadores;
+begin
+  select * into j from public.jugadores where id = auth.uid();
+  if j.id is null or j.rol not in ('editor', 'administrador') then return; end if;
+  insert into public.auditoria (usuario_id, usuario, rol, tipo, movimiento, entidad_id)
+  values (j.id, j.nombre || ' ' || j.apellido || ' (' || j.dni || ')', j.rol, p_tipo, p_movimiento, p_entidad);
+end $$;
+
+-- true si este cambio no hay que registrarlo: propagación automática o dentro de una función que ya registra
+create or replace function public.auditoria_omitir()
+returns boolean language sql stable as $$
+  select pg_trigger_depth() > 1 or coalesce(current_setting('app.sin_auditoria', true), '') = 'on'
+$$;
+
+create or replace function public.aud_nombre_torneo(p uuid) returns text language sql stable security definer set search_path = public as $$
+  select '"' || nombre || '"' from public.torneos where id = p
+$$;
+create or replace function public.aud_tc(p uuid) returns text language sql stable security definer set search_path = public as $$
+  select '"' || t.nombre || '" · ' || c.nombre
+  from public.torneo_categorias tc join public.torneos t on t.id = tc.torneo_id join public.categorias c on c.id = tc.categoria_id
+  where tc.id = p
+$$;
+create or replace function public.aud_inscripcion(p uuid) returns text language sql stable security definer set search_path = public as $$
+  select vp.nombre_corto from public.inscripciones i join public.v_parejas vp on vp.id = i.pareja_id where i.id = p
+$$;
+create or replace function public.aud_partido(p public.partidos) returns text language sql stable security definer set search_path = public as $$
+  select public.aud_tc(p.torneo_categoria_id) || ' · ' ||
+         case when p.fase = 'zona' then 'Zona ' || coalesce((select nombre from public.zonas where id = p.zona_id), '?')
+              else initcap(p.fase::text) end || ': ' ||
+         coalesce(public.aud_inscripcion(p.pareja_a_id), 'A definir') || ' vs ' || coalesce(public.aud_inscripcion(p.pareja_b_id), 'A definir')
+$$;
+
+create or replace function public.aud_torneos() returns trigger language plpgsql security definer set search_path = public as $$
+declare cambios text[] := '{}';
+begin
+  if public.auditoria_omitir() then return null; end if;
+  if tg_op = 'INSERT' then
+    perform public.registrar('torneo', 'Torneo creado: "' || new.nombre || '" (' || new.estado || ')', new.id);
+  elsif tg_op = 'DELETE' then
+    perform public.registrar('torneo', 'Torneo eliminado: "' || old.nombre || '"', old.id);
+  else
+    if new.estado is distinct from old.estado then
+      perform public.registrar('torneo', 'Torneo "' || new.nombre || '": ' || case new.estado
+        when 'publicado' then 'publicado (inscripción abierta)'
+        when 'en_curso' then 'en curso'
+        when 'finalizado' then 'finalizado'
+        when 'cancelado' then 'cancelado'
+        else 'pasado a borrador' end, new.id);
+    end if;
+    if new.nombre is distinct from old.nombre then cambios := cambios || ('nombre (antes "' || old.nombre || '")'); end if;
+    if (new.fecha_desde, new.fecha_hasta) is distinct from (old.fecha_desde, old.fecha_hasta) then cambios := cambios || 'fechas'::text; end if;
+    if new.cierre_inscripcion is distinct from old.cierre_inscripcion then
+      cambios := cambios || ('cierre de inscripción a ' || to_char(new.cierre_inscripcion at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI'));
+    end if;
+    if (new.descripcion, new.observaciones) is distinct from (old.descripcion, old.observaciones) then cambios := cambios || 'descripción/observaciones'::text; end if;
+    if new.precio_inscripcion is distinct from old.precio_inscripcion then cambios := cambios || 'precio'::text; end if;
+    if (new.americano, new.games_set_unico) is distinct from (old.americano, old.games_set_unico) then cambios := cambios || 'formato de partido'::text; end if;
+    if array_length(cambios, 1) > 0 then
+      perform public.registrar('torneo', 'Torneo "' || new.nombre || '" editado: ' || array_to_string(cambios, ', '), new.id);
+    end if;
+  end if;
+  return null;
+end $$;
+
+create or replace function public.aud_torneo_categorias() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if public.auditoria_omitir() then return null; end if;
+  if tg_op = 'INSERT' then
+    perform public.registrar('categoria', 'Categoría agregada al torneo ' || public.aud_nombre_torneo(new.torneo_id) || ': ' ||
+      (select nombre from public.categorias where id = new.categoria_id), new.id);
+  elsif tg_op = 'DELETE' then
+    perform public.registrar('categoria', 'Categoría quitada del torneo ' || coalesce(public.aud_nombre_torneo(old.torneo_id), '(eliminado)') || ': ' ||
+      (select nombre from public.categorias where id = old.categoria_id), old.id);
+  else
+    if new.estado is distinct from old.estado and (new.estado in ('suspendida', 'inscripcion') or old.estado = 'suspendida') then
+      perform public.registrar('categoria', public.aud_tc(new.id) || ': ' ||
+        case new.estado when 'suspendida' then 'suspendida' when 'inscripcion' then 'reabierta a inscripción' else 'reactivada' end, new.id);
+    end if;
+    if (new.cupo_max, new.cupo_min) is distinct from (old.cupo_max, old.cupo_min) then
+      perform public.registrar('categoria', public.aud_tc(new.id) || ': cupo ' || new.cupo_min || ' a ' || new.cupo_max || ' parejas', new.id);
+    end if;
+  end if;
+  return null;
+end $$;
+
+create or replace function public.aud_inscripciones() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if public.auditoria_omitir() then return null; end if;
+  -- solo lo que hace el staff sobre parejas ajenas (lo que hace un jugador con su propia pareja no es "movimiento de admin")
+  if tg_op = 'INSERT' then
+    if not public.es_miembro_pareja(new.pareja_id) then
+      perform public.registrar('inscripcion', 'Pareja inscripta: ' || public.aud_inscripcion(new.id) || ' en ' || public.aud_tc(new.torneo_categoria_id), new.id);
+    end if;
+  else
+    if new.estado = 'cancelada' and old.estado = 'activa' and not public.es_miembro_pareja(new.pareja_id) then
+      perform public.registrar('inscripcion', 'Inscripción cancelada: ' || public.aud_inscripcion(new.id) || ' en ' || public.aud_tc(new.torneo_categoria_id), new.id);
+    end if;
+    if new.pagada is distinct from old.pagada then
+      perform public.registrar('inscripcion', 'Inscripción ' || case when new.pagada then 'marcada como pagada' else 'marcada como no pagada' end || ': ' ||
+        public.aud_inscripcion(new.id) || ' en ' || public.aud_tc(new.torneo_categoria_id), new.id);
+    end if;
+    if new.problemas_horario is distinct from old.problemas_horario and not public.es_miembro_pareja(new.pareja_id) then
+      perform public.registrar('inscripcion', 'Problemas de horario editados: ' || public.aud_inscripcion(new.id) || ' en ' || public.aud_tc(new.torneo_categoria_id), new.id);
+    end if;
+  end if;
+  return null;
+end $$;
+
+create or replace function public.aud_jugadores() returns trigger language plpgsql security definer set search_path = public as $$
+declare quien text := new.nombre || ' ' || new.apellido || ' (' || new.dni || ')';
+begin
+  if public.auditoria_omitir() or new.id = auth.uid() and new.rol = old.rol and new.categoria_id = old.categoria_id then return null; end if;
+  if new.categoria_id is distinct from old.categoria_id then
+    perform public.registrar('jugador', 'Cambio de categoría: ' || quien || ' de ' ||
+      (select nombre from public.categorias where id = old.categoria_id) || ' a ' || (select nombre from public.categorias where id = new.categoria_id), new.id);
+  end if;
+  if new.rol is distinct from old.rol then
+    perform public.registrar('jugador', 'Cambio de rol: ' || quien || ' de ' || initcap(old.rol::text) || ' a ' || initcap(new.rol::text), new.id);
+  end if;
+  if new.activo is distinct from old.activo then
+    perform public.registrar('jugador', 'Jugador ' || case when new.activo then 'activado' else 'desactivado' end || ': ' || quien, new.id);
+  end if;
+  if (new.nombre, new.apellido, new.telefono, new.email) is distinct from (old.nombre, old.apellido, old.telefono, old.email) and new.id <> auth.uid() then
+    perform public.registrar('jugador', 'Datos editados: ' || quien, new.id);
+  end if;
+  return null;
+end $$;
+
+create or replace function public.aud_partidos() returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  res text;
+  g text;
+begin
+  if public.auditoria_omitir() then return null; end if;
+  g := coalesce(public.aud_inscripcion(new.ganador_id), '?');
+  res := case new.estado
+    when 'wo' then 'W.O. a favor de ' || g
+    else concat_ws(' ', new.s1_a || '-' || new.s1_b, new.s2_a || '-' || new.s2_b, new.s3_a || '-' || new.s3_b) || ' (gana ' || g || ')' end;
+  if new.estado in ('finalizado', 'wo') and old.estado = 'pendiente' then
+    perform public.registrar('resultado', 'Resultado cargado: ' || public.aud_partido(new) || ' → ' || res, new.id);
+  elsif new.estado in ('finalizado', 'wo') and (new.estado, new.s1_a, new.s1_b, new.s2_a, new.s2_b, new.s3_a, new.s3_b, new.ganador_id)
+        is distinct from (old.estado, old.s1_a, old.s1_b, old.s2_a, old.s2_b, old.s3_a, old.s3_b, old.ganador_id) then
+    perform public.registrar('resultado', 'Resultado editado: ' || public.aud_partido(new) || ' → ' || res, new.id);
+  elsif new.estado = 'pendiente' and old.estado in ('finalizado', 'wo') then
+    perform public.registrar('resultado', 'Resultado anulado: ' || public.aud_partido(new), new.id);
+  end if;
+  if (new.sede_id, new.cancha_id, new.fecha_hora) is distinct from (old.sede_id, old.cancha_id, old.fecha_hora) then
+    perform public.registrar('programacion', 'Partido programado: ' || public.aud_partido(new) || ' → ' ||
+      coalesce((select nombre from public.sedes where id = new.sede_id), 'sin sede') ||
+      coalesce(' · ' || (select nombre from public.canchas where id = new.cancha_id), '') ||
+      coalesce(' · ' || to_char(new.fecha_hora at time zone 'America/Argentina/Buenos_Aires', 'DD/MM HH24:MI'), ' · sin horario'), new.id);
+  end if;
+  return null;
+end $$;
+
+create or replace function public.aud_sedes() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if public.auditoria_omitir() then return null; end if;
+  if tg_op = 'INSERT' then perform public.registrar('sede', 'Sede creada: ' || new.nombre, new.id);
+  elsif new.activa is distinct from old.activa then perform public.registrar('sede', 'Sede ' || case when new.activa then 'activada' else 'desactivada' end || ': ' || new.nombre, new.id);
+  elsif (new.nombre, new.direccion) is distinct from (old.nombre, old.direccion) then perform public.registrar('sede', 'Sede editada: ' || new.nombre, new.id);
+  end if;
+  return null;
+end $$;
+
+create or replace function public.aud_canchas() returns trigger language plpgsql security definer set search_path = public as $$
+declare s text;
+begin
+  if public.auditoria_omitir() then return null; end if;
+  select nombre into s from public.sedes where id = coalesce(new.sede_id, old.sede_id);
+  if tg_op = 'INSERT' then perform public.registrar('sede', 'Cancha agregada en ' || s || ': ' || new.nombre, new.id);
+  elsif tg_op = 'DELETE' then perform public.registrar('sede', 'Cancha eliminada en ' || s || ': ' || old.nombre, old.id);
+  elsif new.nombre is distinct from old.nombre then perform public.registrar('sede', 'Cancha renombrada en ' || s || ': ' || old.nombre || ' → ' || new.nombre, new.id);
+  elsif new.activa is distinct from old.activa then perform public.registrar('sede', 'Cancha ' || case when new.activa then 'activada' else 'desactivada' end || ' en ' || s || ': ' || new.nombre, new.id);
+  end if;
+  return null;
+end $$;
+
+create or replace function public.aud_categorias() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if public.auditoria_omitir() then return null; end if;
+  if tg_op = 'INSERT' then perform public.registrar('config', 'Categoría creada: ' || new.nombre);
+  elsif new.activa is distinct from old.activa then perform public.registrar('config', 'Categoría ' || case when new.activa then 'activada' else 'desactivada' end || ': ' || new.nombre);
+  end if;
+  return null;
+end $$;
+
+create trigger t_aud_torneos after insert or update or delete on public.torneos for each row execute function public.aud_torneos();
+create trigger t_aud_torneo_categorias after insert or update or delete on public.torneo_categorias for each row execute function public.aud_torneo_categorias();
+create trigger t_aud_inscripciones after insert or update on public.inscripciones for each row execute function public.aud_inscripciones();
+create trigger t_aud_jugadores after update on public.jugadores for each row execute function public.aud_jugadores();
+create trigger t_aud_partidos after update on public.partidos for each row execute function public.aud_partidos();
+create trigger t_aud_sedes after insert or update on public.sedes for each row execute function public.aud_sedes();
+create trigger t_aud_canchas after insert or update or delete on public.canchas for each row execute function public.aud_canchas();
+create trigger t_aud_categorias after insert or update on public.categorias for each row execute function public.aud_categorias();
+
+-- Usuarios que tienen movimientos (para el filtro de la pantalla de Logs)
+create or replace function public.auditoria_usuarios()
+returns table (usuario_id uuid, usuario text)
+language sql stable security definer set search_path = public as $$
+  select distinct on (a.usuario_id) a.usuario_id, a.usuario
+  from public.auditoria a where public.es_admin() and a.usuario_id is not null
+  order by a.usuario_id, a.created_at desc
+$$;
+
+-- ---------------------------------------------------------------------
 -- 13. Row Level Security
 -- ---------------------------------------------------------------------
 alter table public.categorias                  enable row level security;
@@ -1575,6 +1818,7 @@ alter table public.jugadores                   enable row level security;
 alter table public.jugador_categoria_historial enable row level security;
 alter table public.sedes                       enable row level security;
 alter table public.canchas                     enable row level security;
+alter table public.auditoria                   enable row level security;
 alter table public.parejas                     enable row level security;
 alter table public.torneos                     enable row level security;
 alter table public.torneo_categorias           enable row level security;
@@ -1602,6 +1846,7 @@ create policy historial_select on public.jugador_categoria_historial for select 
 create policy sedes_select on public.sedes for select to authenticated using (true);
 create policy sedes_admin  on public.sedes for all to authenticated using (public.es_admin()) with check (public.es_admin());
 create policy canchas_select on public.canchas for select to authenticated using (true);
+create policy auditoria_select on public.auditoria for select to authenticated using (public.es_admin());
 create policy canchas_admin  on public.canchas for all to authenticated using (public.es_admin()) with check (public.es_admin());
 
 -- parejas (el alta es solo por la función crear_pareja)
@@ -1657,6 +1902,9 @@ grant select on public.v_jugadores, public.v_parejas, public.v_torneo_categorias
 revoke execute on all functions in schema public from anon;
 grant execute on function public.dni_disponible(text) to anon, authenticated;
 grant execute on all functions in schema public to authenticated;
+-- La auditoría solo se escribe desde triggers y funciones del sistema
+revoke insert, update, delete on public.auditoria from anon, authenticated;
+revoke execute on function public.registrar(text, text, uuid) from anon, authenticated, public;
 
 -- ---------------------------------------------------------------------
 -- 15. Primer administrador

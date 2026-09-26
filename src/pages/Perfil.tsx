@@ -106,6 +106,7 @@ export default function Perfil() {
                 <Link to="/admin/jugadores" className="py-1">Jugadores</Link>
                 <Link to="/admin/categorias" className="py-1">Categorías</Link>
                 <Link to="/admin/sedes" className="py-1">Sedes y canchas</Link>
+                <Link to="/admin/logs" className="py-1">Logs</Link>
               </nav>
             </Card>
           )}

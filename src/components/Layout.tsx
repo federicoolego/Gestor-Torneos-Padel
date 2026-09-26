@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X, BarChart3, CalendarRange } from 'lucide-react'
+import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X, BarChart3, CalendarRange, ScrollText } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { ROL_LABEL } from '../lib/formato'
 
@@ -21,6 +21,7 @@ const ADMIN = [
   { to: '/admin/jugadores', label: 'Jugadores', icono: IdCard },
   { to: '/admin/categorias', label: 'Categorías', icono: Layers },
   { to: '/admin/sedes', label: 'Sedes y canchas', icono: MapPin },
+  { to: '/admin/logs', label: 'Logs', icono: ScrollText },
 ]
 
 function Enlace({ to, label, icono: Icono }: (typeof MENU)[number]) {
