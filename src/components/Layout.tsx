@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X, BarChart3, CalendarRange, ScrollText } from 'lucide-react'
+import { Trophy, ClipboardList, Users, CalendarDays, UserRound, LogOut, Settings2, IdCard, MapPin, Layers, ShieldCheck, X, BarChart3, CalendarRange, ScrollText, Contact } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { ROL_LABEL } from '../lib/formato'
 
@@ -9,8 +9,12 @@ const MENU = [
   { to: '/mis-inscripciones', label: 'Mis Inscripciones', icono: ClipboardList },
   { to: '/mis-parejas', label: 'Mis Parejas', icono: Users },
   { to: '/mis-torneos', label: 'Mis Torneos', icono: CalendarDays },
+  { to: '/jugadores', label: 'Jugadores', icono: Contact },
   { to: '/perfil', label: 'Perfil', icono: UserRound },
 ]
+
+/** En el celu Perfil va arriba (junto a cerrar sesión) para no pasar de 5 íconos + staff abajo */
+const MENU_MOVIL = MENU.filter((m) => m.to !== '/perfil')
 
 /** Editor y administrador */
 const CALENDARIO = { to: '/calendario', label: 'Calendario de partidos', icono: CalendarRange }
@@ -79,6 +83,7 @@ export default function Layout() {
       <header className="flex items-center justify-between bg-noche px-4 py-3 lg:hidden" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
         <Marca />
         <div className="flex items-center gap-3">
+          <NavLink to="/perfil" aria-label="Perfil" className={({ isActive }) => (isActive ? 'text-pelota' : 'text-white/70')}><UserRound className="h-5 w-5" /></NavLink>
           <button onClick={salir} aria-label="Cerrar sesión" className="text-white/70"><LogOut className="h-5 w-5" /></button>
         </div>
       </header>
@@ -95,7 +100,7 @@ export default function Layout() {
         className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-noche/10 bg-white lg:hidden ${esEditor ? 'grid-cols-6' : 'grid-cols-5'}`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        {MENU.map(({ to, label, icono: Icono }) => (
+        {MENU_MOVIL.map(({ to, label, icono: Icono }) => (
           <NavLink
             key={to}
             to={to}
@@ -104,7 +109,7 @@ export default function Layout() {
             }
           >
             <Icono className="h-5 w-5" aria-hidden />
-            <span className="text-center">{label.replace('Mis ', '')}</span>
+            <span className="text-center">{to === '/mis-torneos' ? 'Mis torneos' : label.replace('Mis ', '')}</span>
           </NavLink>
         ))}
         {esEditor && !esAdmin && (

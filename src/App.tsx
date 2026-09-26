@@ -20,6 +20,7 @@ import AdminSedes from './pages/admin/AdminSedes'
 import AdminCategorias from './pages/admin/AdminCategorias'
 import AdminEstadisticas from './pages/admin/AdminEstadisticas'
 import Calendario from './pages/Calendario'
+import Jugadores from './pages/Jugadores'
 import AdminLogs from './pages/admin/AdminLogs'
 
 function Privada({ children, soloAdmin, soloEditor }: { children: ReactNode; soloAdmin?: boolean; soloEditor?: boolean }) {
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/mis-inscripciones" element={<MisInscripciones />} />
         <Route path="/mis-parejas" element={<MisParejas />} />
         <Route path="/mis-torneos" element={<MisTorneos />} />
+        <Route path="/jugadores" element={<Privada><Jugadores /></Privada>} />
         <Route path="/calendario" element={<Privada soloEditor><Calendario /></Privada>} />
         <Route path="/admin/torneos" element={<Privada soloAdmin><AdminTorneos /></Privada>} />
         <Route path="/admin/torneos/nuevo" element={<Privada soloAdmin><TorneoForm /></Privada>} />
